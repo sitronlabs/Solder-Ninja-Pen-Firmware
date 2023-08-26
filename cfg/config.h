@@ -1,6 +1,10 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* App config */
+#define CONFIG_APP_TARGET_MIN 0    //!< Minimum target temperature in degrees celsius
+#define CONFIG_APP_TARGET_MAX 350  //!< Maximum target temperature in degrees celsius
+
 /* Buttons config */
 #define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30         //!<
 #define CONFIG_BUTTONS_PRESS_LONG_DURATION 500         //!<

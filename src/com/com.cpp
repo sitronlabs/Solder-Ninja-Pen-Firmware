@@ -1,7 +1,7 @@
 /* Self header */
 #include "com.h"
 
-/* Project code */
+/* Project */
 #include "../app/app.h"
 
 int com_task(void) {

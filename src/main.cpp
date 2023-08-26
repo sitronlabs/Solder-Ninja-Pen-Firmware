@@ -1,4 +1,4 @@
-/* Project code */
+/* Project */
 #include "app/app.h"
 #include "interface/interface.h"
 #include "log/log.h"
@@ -24,11 +24,14 @@ void setup(void) {
 
     /* Setup spi */
 #if R8A
-    SPI.setSCK(18);
-    SPI.setTX(19);
-    SPI.setRX(16);
-    SPI.setCS(17);
-    SPI.begin();
+    SPI1.setSCK(26);
+    SPI1.setTX(27);
+    SPI1.setRX(24);
+    SPI1.begin();
+    pinMode(20, OUTPUT);
+    pinMode(25, OUTPUT);
+    digitalWrite(20, HIGH);
+    digitalWrite(25, HIGH);
 #endif
 
     /* Setup log */

@@ -1,7 +1,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
-/* Project code */
+/* Project */
 #include "../errors/errors.h"
 
 /**

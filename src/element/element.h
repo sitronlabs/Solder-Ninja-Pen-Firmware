@@ -1,6 +1,9 @@
 #ifndef ELEMENT_H
 #define ELEMENT_H
 
+/* Setup */
+int element_setup(void);
+
 /* Functions related to measuring */
 int element_connected_get(void);
 int element_temperature_measured_get(float &temperature_c);

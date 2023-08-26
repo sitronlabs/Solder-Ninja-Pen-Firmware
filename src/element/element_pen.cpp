@@ -1,7 +1,7 @@
 /* Self header */
 #include "element.h"
 
-/* Project code */
+/* Project */
 #include "../errors/errors.h"
 #include "../log/log.h"
 
@@ -29,7 +29,6 @@ static enum {
     STATE_1,
     STATE_2,
     STATE_3,
-    STATE_4,
     STATE_ERROR,
 } m_sm;
 
@@ -61,14 +60,14 @@ int element_setup(void) {
 #elif R8A
 
     /* Setup thermocouple analog front end */
-    res = m_thermocouple_afe.setup(SPI, 5000000, 25);
+    res = m_thermocouple_afe.setup(SPI1, 5000000, 25);
     if (res < 0) {
         log_e("Failed to setup afe!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
 
     /* Setup dac for dc-dc regulation */
-    res = m_dac.setup(SPI, 8000000, 20, 3.3);
+    res = m_dac.setup(SPI1, 8000000, 20, 3.3);
     if (res < 0) {
         log_e("Failed to setup dac!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
@@ -89,7 +88,7 @@ int element_setup(void) {
  *
  */
 int element_connected_get(void) {
-    return false;  // TODO
+    return m_element_connected;
 }
 
 /**
@@ -129,11 +128,6 @@ int element_task(void) {
     switch (m_sm) {
 
         case STATE_0: {
-            // Wait for something to start ?
-            break;
-        }
-
-        case STATE_1: {
 
             /* Read information from thermocouple afe */
             float temperature_thermocouple_c = 0;
@@ -149,34 +143,36 @@ int element_task(void) {
             }
 
             /* Ensure tip is connected */
-            if (is_shorted_vcc || is_shorted_gnd || is_open) {
+            if (is_shorted_vcc || is_open) {
                 m_element_connected = false;
                 break;
+            } else {
+                m_element_connected = true;
             }
 
-            /* Store temperature */
-            m_temperature_measured_c = temperature_thermocouple_c;
+            /* Store compensated temperature */
+            m_temperature_measured_c = 2.3482 * temperature_thermocouple_c - 47.426;
             m_temperature_measured_timestamp = millis();
 
             /* Move on to heating if enabled*/
             if (m_heating_enabled) {
-                m_sm = STATE_2;
+                m_sm = STATE_1;
             }
             break;
         }
 
-        case STATE_2: {  // Start heating if possible
+        case STATE_1: {  // Start heating if possible
 
-            // Ask power negotiator how much we can draw
+            /* Ask power negotiator how much we can draw */
             // Set m_heating_duration
 
             /* Move on */
             m_timestamp = millis();
-            m_sm = STATE_3;
+            m_sm = STATE_2;
             break;
         }
 
-        case STATE_3: {
+        case STATE_2: {
 
             /* If available power has changed, terminate the heating cycle early */
             // TODO
@@ -188,11 +184,11 @@ int element_task(void) {
 
             /* Move on */
             m_timestamp = millis();
-            m_sm = STATE_4;
+            m_sm = STATE_3;
             break;
         }
 
-        case STATE_4: {  // Wait after heating
+        case STATE_3: {  // Wait after heating
 
             /* Wait for the current to disappear in the tip before measuring again */
             if ((millis() - m_timestamp) < CONFIG_TIP_TIME_COOLDOWN) {
@@ -200,7 +196,7 @@ int element_task(void) {
             }
 
             /* Move on */
-            m_sm = STATE_1;
+            m_sm = STATE_0;
             break;
         }
 

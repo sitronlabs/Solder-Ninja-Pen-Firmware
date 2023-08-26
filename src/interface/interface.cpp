@@ -1,7 +1,7 @@
 /* Self header */
 #include "interface.h"
 
-/* Project code */
+/* Project */
 #include "../app/app.h"
 #include "../element/element.h"
 #include "../log/log.h"
@@ -28,8 +28,9 @@ static enum {
     STATE_4_MONITOR_HEATING,
     STATE_5_MONITOR_ASLEEP,
     STATE_6_MONITOR_ADJUST,
-} m_sm,
-    m_sm_previous;
+    STATE_7_MENU,
+} m_sm;
+static float m_temperature_c;
 
 /* Icon bitmaps */
 const uint8_t m_icon_ninja[32] = {0x03, 0xF8, 0x07, 0xFC, 0x0F, 0xFE, 0xDF, 0xFF, 0x7F, 0xFF, 0x78, 0x03, 0x73, 0x33, 0x73, 0x31, 0xF0, 0x03, 0x1F, 0xFF, 0x1F, 0xFF, 0x1F, 0xFE, 0x0F, 0xFE, 0x0F, 0xFC, 0x07, 0xF8, 0x01, 0xF0};
@@ -39,6 +40,7 @@ const uint8_t m_icon_sleep[32] = {0x00, 0x00, 0x7F, 0x00, 0x02, 0x00, 0x04, 0x00
 const uint8_t m_icon_thermometer[32] = {0x01, 0x00, 0x02, 0x80, 0x04, 0x58, 0x05, 0x40, 0x05, 0x58, 0x05, 0x40, 0x05, 0x58, 0x05, 0x40, 0x05, 0x40, 0x09, 0x20, 0x13, 0x90, 0x17, 0xD0, 0x13, 0x90, 0x09, 0x20, 0x04, 0x40, 0x03, 0x80};
 const uint8_t m_icon_degrees_c[32] = {0x00, 0x00, 0xE0, 0x00, 0xA0, 0x00, 0xE0, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x0F, 0x00, 0x30, 0xC0, 0x30, 0xC0, 0x30, 0x00, 0x30, 0x00, 0x30, 0xC0, 0x30, 0xC0, 0x0F, 0x00, 0x0F, 0x00, 0x00, 0x00};
 const uint8_t m_icon_degrees_f[32] = {0x00, 0x00, 0xE0, 0x00, 0xA0, 0x00, 0xE0, 0x00, 0x00, 0x00, 0x3F, 0xC0, 0x3F, 0xC0, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x3F, 0x00, 0x3F, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x00, 0x00};
+const uint8_t m_icon_settings[32] = {0x00, 0x00, 0x00, 0x00, 0x3f, 0xf8, 0x40, 0x04, 0x49, 0x24, 0x4b, 0xa4, 0x49, 0x24, 0x49, 0x24, 0x49, 0x24, 0x5d, 0x24, 0x49, 0x74, 0x49, 0x24, 0x40, 0x04, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00};
 
 /**
  * @return 0 in case of success, or a negative error code otherwise, in particular:
@@ -84,8 +86,12 @@ int interface_setup(void) {
 int interface_task(void) {
     int res;
 
-    /* Buttons task */
+    /* Handle buttons */
     buttons_task();
+
+    /* Handle display */
+
+    /* Handle accelerometer */
 
     /* State machine */
     switch (m_sm) {
@@ -136,14 +142,17 @@ int interface_task(void) {
             /* Move on according to app state */
             switch (app_state_get()) {
                 case APP_STATE_LOCKED: {
+                    log_d("Redirect to STATE_3_MONITOR_LOCKED");
                     m_sm = STATE_3_MONITOR_LOCKED;
                     break;
                 }
                 case APP_STATE_HEATING: {
+                    log_d("Redirect to STATE_4_MONITOR_HEATING");
                     m_sm = STATE_4_MONITOR_HEATING;
                     break;
                 }
                 case APP_STATE_ASLEEP: {
+                    log_d("Redirect to STATE_5_MONITOR_ASLEEP");
                     m_sm = STATE_5_MONITOR_ASLEEP;
                     break;
                 }
@@ -170,22 +179,36 @@ int interface_task(void) {
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (element_connected_get()) {
+                float temperature_c = 0;
+                res = element_temperature_measured_get(temperature_c);
+                if (res < 0) {
+                    m_library.print("err");
+                } else {
+                    m_temperature_c = (temperature_c + 9 * m_temperature_c) / 10.0;
+                    m_library.printf("%03.0f", m_temperature_c);                              // TODO Use settings to change units
+                    m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+                }
             } else {
                 m_library.print("tip");
             }
             m_library.display();
 
             /* Handle buttons */
-            // switch (buttons_event_get()) {
-            // }
-            enum buttons_event e = buttons_event_get();
-            if (e != BUTTONS_EVENT_NONE) {
-                log_d("Event %d", e);
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    app_unlock(APP_LOCK_SOURCE_BUTTONS);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    app_unlock(APP_LOCK_SOURCE_BUTTONS);
+                    m_sm = STATE_7_MENU;
+                    break;
+                }
             }
 
             /* Handle magnet */
             // TODO
-            // Actually maybe magnet should be managed by app directly ?
+            // Actually maybe magnet should be managed by app directly?
 
             /* That's it */
             break;
@@ -201,7 +224,7 @@ int interface_task(void) {
 
             /* Display monitor page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_lock, 16, 16, 1);
+            m_library.drawBitmap(0, 0, m_icon_bolt, 16, 16, 1);
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (element_connected_get()) {
@@ -216,22 +239,36 @@ int interface_task(void) {
             } else {
                 m_library.print("tip");
             }
+            m_library.display();
 
-            /* Handle buttons */
+            /* Handle buttons
+             * Short and long presses on either buttons will adjust target temperature
+             * A short press on both buttons will trigger a lock
+             * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
-                case BUTTONS_EVENT_LEFT_SHORT: {
-                    // TODO Decrease target temperature
+                case BUTTONS_EVENT_LEFT_SHORT:
+                case BUTTONS_EVENT_LEFT_LONG: {
+                    app_target_decrease();
                     m_timestamp = millis();
                     m_sm = STATE_6_MONITOR_ADJUST;
                     break;
                 }
-                case BUTTONS_EVENT_RIGHT_SHORT: {
-                    // TODO Increase target temperature
+                case BUTTONS_EVENT_RIGHT_SHORT:
+                case BUTTONS_EVENT_RIGHT_LONG: {
+                    app_target_increase();
                     m_timestamp = millis();
                     m_sm = STATE_6_MONITOR_ADJUST;
                     break;
                 }
-                    // TODO Other buttons
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    app_lock(APP_LOCK_SOURCE_BUTTONS);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    app_lock(APP_LOCK_SOURCE_BUTTONS);
+                    m_sm = STATE_7_MENU;
+                    break;
+                }
             }
 
             /* That's it */
@@ -247,13 +284,15 @@ int interface_task(void) {
             }
 
             /* Display monitor page */
-            m_sm_previous;
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_sleep, 16, 16, 1);
             // TODO
+            m_library.display();
 
             /* Handle buttons
              * Short and long presses on either buttons will trigger a wake
              * A short press on both buttons will trigger a lock
-             * A long press on both buttons will enter the menu */
+             * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT:
                 case BUTTONS_EVENT_LEFT_LONG:
@@ -263,12 +302,13 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_lock();
+                    app_lock(APP_LOCK_SOURCE_BUTTONS);  // APP_LOCK_INTERFACE_BUTTON
                     m_sm = STATE_2_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-
+                    app_lock(APP_LOCK_SOURCE_BUTTONS);  // APP_LOCK_INTERFACE_BUTTON
+                    m_sm = STATE_7_MENU;
                     break;
                 }
             }
@@ -283,16 +323,46 @@ int interface_task(void) {
                 break;
             }
 
+            /* Display monitor page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_thermometer, 16, 16, 1);
+            m_library.setTextSize(2);
+            m_library.setCursor(17, 1);
+            m_library.printf("%03.0f", app_target_get());                             // TODO Use settings to change units
+            m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+            m_library.display();
+
             /* Handle buttons */
             switch (buttons_event_get()) {
-                case BUTTONS_EVENT_LEFT_SHORT: {
-                    // TODO Decrease target temperature
+                case BUTTONS_EVENT_LEFT_SHORT:
+                case BUTTONS_EVENT_LEFT_LONG: {
+                    app_target_decrease();
                     m_timestamp = millis();
                     break;
                 }
-                case BUTTONS_EVENT_RIGHT_SHORT: {
-                    // TODO Increase target temperature
+                case BUTTONS_EVENT_RIGHT_SHORT:
+                case BUTTONS_EVENT_RIGHT_LONG: {
+                    app_target_increase();
                     m_timestamp = millis();
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_7_MENU: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_2_MONITOR_REDIRECT;
                     break;
                 }
             }
