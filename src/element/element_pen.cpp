@@ -7,6 +7,7 @@
 
 /* Arduino libraries */
 #include <Arduino.h>
+#include <RunningMedian.h>
 #include <dac5311.h>
 #include <max31855.h>
 
@@ -18,6 +19,7 @@
 /* Local variables */
 static max31855 m_thermocouple_afe;
 static dac5311 m_dac;
+static RunningMedian m_temperature_filter = RunningMedian(255);
 static float m_temperature_measured_c = 0;
 static uint32_t m_temperature_measured_timestamp = 0;
 static bool m_element_connected = false;
@@ -150,8 +152,14 @@ int element_task(void) {
                 m_element_connected = true;
             }
 
-            /* Store compensated temperature */
-            m_temperature_measured_c = 2.3482 * temperature_thermocouple_c - 47.426;
+            /* Compensate and filter temperature
+             * The use of a mean filter helps with electronically noisy environments */
+            temperature_thermocouple_c = 2.3482 * temperature_thermocouple_c - 47.426;
+            m_temperature_filter.add(temperature_thermocouple_c);
+            temperature_thermocouple_c = m_temperature_filter.getMedian();
+
+            /* Store temperature */
+            m_temperature_measured_c = temperature_thermocouple_c;
             m_temperature_measured_timestamp = millis();
 
             /* Move on to heating if enabled*/
