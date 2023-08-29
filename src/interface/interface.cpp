@@ -200,7 +200,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_unlock(APP_LOCK_SOURCE_BUTTONS);
+                    app_lock(APP_LOCK_SOURCE_BUTTONS);
                     m_sm = STATE_7_MENU;
                     break;
                 }
