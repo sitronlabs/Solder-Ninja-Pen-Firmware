@@ -97,10 +97,6 @@ int power_setup(void) {
         log_e("Failed to setup pi3usb9281 ic!");
         return -1;
     }
-    if (m_pi3usb9281.detect() != true) {
-        log_e("Failed to detect pi3usb9281 ic!");
-        return -1;
-    }
 
     /* Setup usb mux */
     m_fsusb43.setup(7);
@@ -110,20 +106,6 @@ int power_setup(void) {
     res = m_fusb302.setup(Wire, 0x22);
     if (res < 0) {
         log_e("Failed to setup fusb302 ic!");
-        return -1;
-    }
-    if (m_fusb302.detect() != true) {
-        log_e("Failed to detect fusb302 ic!");
-        return -1;
-    }
-    res = m_fusb302.reset();
-    if (res < 0) {
-        log_e("Failed to reset fusb302 ic!");
-        return -1;
-    }
-    res = m_fusb302.power_set(true);
-    if (res < 0) {
-        log_e("Failed to configure fusb302 ic!");
         return -1;
     }
     // TODO Enable automatic retransmission
@@ -187,17 +169,22 @@ int power_task(void) {
     static enum {
         STATE_IDLE,
         STATE_TC_0,
+        STATE_TC_1,
+        STATE_TC_2,
         STATE_BC_0,
         STATE_BC_1,
         STATE_BC_2,
         STATE_BC_3,
         STATE_BC_4,
+        STATE_BC_5,
         STATE_QC_0,
         STATE_QC_1,
         STATE_QC_2,
         STATE_QC_3,
+        STATE_QC_4,
+        STATE_QC_5,
         STATE_PD_0,
-        STATE_ERROR,
+        STATE_DONE,
     } m_sm;
     switch (m_sm) {
 
@@ -215,6 +202,43 @@ int power_task(void) {
 
         case STATE_TC_0: {
 
+            /* Ensure ic is detected */
+            if (m_fusb302.detect() != true) {
+                log_e("Failed to detect fusb302 ic!");
+                m_sm = STATE_TC_2;
+                break;
+            }
+
+            /* Reset internal registers */
+            res = m_fusb302.reset();
+            if (res < 0) {
+                log_e("Failed to reset fusb302 ic!");
+                m_sm = STATE_TC_2;
+                break;
+            }
+
+            /* Enable power to all internal circuitry */
+            res = m_fusb302.power_set(true);
+            if (res < 0) {
+                log_e("Failed to configure fusb302 ic!");
+                m_sm = STATE_TC_2;
+                break;
+            }
+
+            /* Don't retry too many times */
+            if (m_errors_tc > 5) {
+                log_e("Too many errors!");
+                m_sm = STATE_TC_2;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_TC_1;
+            break;
+        }
+
+        case STATE_TC_1: {
+
             /* Measure voltages on the cc pins to determine
              * 1) the orientation of the usb type-c cable
              * 2) the current limit reported by the dfp */
@@ -222,8 +246,8 @@ int power_task(void) {
             res = m_fusb302.cc_measure(&cc1, &cc2);
             if (res < 0) {
                 log_e("Failed to read cc voltages!");
+                m_sm = STATE_TC_0;
                 m_errors_tc++;
-                m_sm = STATE_ERROR;
                 break;
             }
 
@@ -237,8 +261,8 @@ int power_task(void) {
                 orientation = FUSB302_ORIENTATION_1;
             } else {
                 log_w("Invalid cc pin logic");
+                m_sm = STATE_TC_0;
                 m_errors_tc++;
-                m_sm = STATE_ERROR;
                 break;
             }
 
@@ -246,7 +270,8 @@ int power_task(void) {
             res = m_fusb302.orientation_set(orientation);
             if (res < 0) {
                 log_e("Failed to set orientation!");
-                m_sm = STATE_ERROR;
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
                 break;
             }
 
@@ -274,41 +299,47 @@ int power_task(void) {
             m_options_add(option);
 
             /* Move on */
+            m_sm = STATE_TC_2;
+            break;
+        }
+
+        case STATE_TC_2: {
+
+            /* Move on */
             m_sm = STATE_BC_0;
             break;
         }
 
         case STATE_BC_0: {
 
-            /* Inspired by the chromebook-ec provider code, perform a debounce.
-             * @see https://git.furworks.de/coreboot-mirror/chrome-ec/src/branch/master/driver/bc12/pi3usb9281.c */
-            res = m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_OPEN);
-            if (res < 0) {
-                log_e("Failed to configure usb switches!");
-                m_errors_bc++;
-                m_sm = STATE_ERROR;
+            /* Ensure the ic is detected */
+            if (m_pi3usb9281.detect() != true) {
+                log_e("Failed to detect pi3usb9281 ic!");
+                m_sm = STATE_BC_5;
+                break;
+            }
+
+            /* Don't retry too many times */
+            if (m_errors_bc > 5) {
+                log_e("Too many errors!");
+                m_sm = STATE_BC_5;
                 break;
             }
 
             /* Move on */
-            m_timestamp = millis();
             m_sm = STATE_BC_1;
             break;
         }
 
         case STATE_BC_1: {
 
-            /* Wait */
-            if (millis() - m_timestamp < 1000) {
-                break;
-            }
-
-            /* Reset ic */
-            res = m_pi3usb9281.reset();
+            /* Inspired by the chromebook-ec provider code, perform a debounce.
+             * @see https://git.furworks.de/coreboot-mirror/chrome-ec/src/branch/master/driver/bc12/pi3usb9281.c */
+            res = m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_OPEN);
             if (res < 0) {
-                log_e("Failed to reset ic!");
+                log_e("Failed to configure usb switches!");
+                m_sm = STATE_BC_0;
                 m_errors_bc++;
-                m_sm = STATE_ERROR;
                 break;
             }
 
@@ -321,6 +352,28 @@ int power_task(void) {
         case STATE_BC_2: {
 
             /* Wait */
+            if (millis() - m_timestamp < 1000) {
+                break;
+            }
+
+            /* Reset ic */
+            res = m_pi3usb9281.reset();
+            if (res < 0) {
+                log_e("Failed to reset ic!");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            }
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_BC_3;
+            break;
+        }
+
+        case STATE_BC_3: {
+
+            /* Wait */
             if (millis() - m_timestamp < 100) {
                 break;
             }
@@ -329,25 +382,25 @@ int power_task(void) {
             res = m_pi3usb9281.device_attach_wait(1000);
             if (res < 0) {
                 log_e("Failed to detect a usb device!");
+                m_sm = STATE_BC_0;
                 m_errors_bc++;
-                m_sm = STATE_ERROR;
                 break;
             }
 
             /* Move on */
-            m_sm = STATE_BC_3;
+            m_sm = STATE_BC_4;
             break;
         }
 
-        case STATE_BC_3: {
+        case STATE_BC_4: {
 
             /* Retrieve type of device */
             enum pi3usb9281c_device_type type;
             res = m_pi3usb9281.device_type_get(&type);
             if (res < 0) {
                 log_e("Failed to determine type of usb device attached!");
+                m_sm = STATE_BC_0;
                 m_errors_bc++;
-                m_sm = STATE_ERROR;
                 break;
             }
 
@@ -394,24 +447,20 @@ int power_task(void) {
             }
 
             /* Move on */
-            m_sm = STATE_BC_4;
+            m_sm = STATE_BC_5;
             break;
         }
 
-        case STATE_BC_4: {
+        case STATE_BC_5: {
+
+            /* Move on */
+            m_sm = STATE_PD_0;
             break;
         }
 
         case STATE_QC_0: {
 
-            /* Route usb signal to resistor network */
-            if (m_fsusb43.output_select(FSUSB43_OUTPUT_2) < 0 ||
-                m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_CLOSED) < 0) {
-                log_e("Failed to route signals!");
-                m_errors_qc++;
-                m_sm = STATE_ERROR;
-                break;
-            }
+            // TODO m_errors_qc
 
             /* Move on */
             m_sm = STATE_QC_1;
@@ -419,6 +468,22 @@ int power_task(void) {
         }
 
         case STATE_QC_1: {
+
+            /* Route usb signal to resistor network */
+            if (m_fsusb43.output_select(FSUSB43_OUTPUT_2) < 0 ||
+                m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_CLOSED) < 0) {
+                log_e("Failed to route signals!");
+                m_sm = STATE_QC_0;
+                m_errors_qc++;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_QC_2;
+            break;
+        }
+
+        case STATE_QC_2: {
 
             /* Apply 0.325V-2V to D+ line */
             pinMode(m_qc_dn_h_pin, OUTPUT);
@@ -428,29 +493,47 @@ int power_task(void) {
 
             /* Move on */
             m_timestamp = millis();
-            m_sm = STATE_QC_2;
+            m_sm = STATE_QC_3;
             break;
         }
 
-        case STATE_QC_2: {
+        case STATE_QC_3: {
 
             /* Wait */
             if (millis() - m_timestamp < 100) {
                 break;
             }
+
+            /* Move on */
+            m_sm = STATE_QC_4;
+            break;
+        }
+
+        case STATE_QC_4: {
+
+            /* Move on */
+            m_sm = STATE_QC_5;
+            break;
+        }
+
+        case STATE_QC_5: {
+
+            /* Move on */
+            m_sm = STATE_QC_4;
             break;
         }
 
         case STATE_PD_0: {
 
             /* Skip for now */
-            m_sm = STATE_BC_0;
+            m_sm = STATE_DONE;
             break;
         }
 
-        case STATE_ERROR: {
-            log_w("Error, retrying ...");
-            m_sm = STATE_IDLE;
+        case STATE_DONE: {
+
+            /* Do nothing
+             * @todo Maybe monitor voltage in case of pd / hvdcp */
             break;
         }
 
