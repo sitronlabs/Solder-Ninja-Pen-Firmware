@@ -3,6 +3,7 @@
 
 /* Project */
 #include "../app/app.h"
+#include "../app/power/power.h"
 #include "../element/element.h"
 #include "../log/log.h"
 #include "../settings/settings.h"
@@ -191,6 +192,20 @@ int interface_task(void) {
             } else {
                 m_library.print("tip");
             }
+            m_library.setTextSize(1);
+            struct power_option contract;
+            res = power_contract_get(&contract);
+            if (res < 0) {
+                m_library.setCursor(11 * 6, 0);
+                m_library.printf("--.-V", 12.3);
+                m_library.setCursor(11 * 6, 9);
+                m_library.printf("-.-A", 2.5);
+            } else {
+                m_library.setCursor(11 * 6, 0);
+                m_library.printf("%4.1fV", contract.voltage_max);
+                m_library.setCursor(12 * 6, 9);
+                m_library.printf("%3.1fA", contract.current_max);
+            }
             m_library.display();
 
             /* Handle buttons */
@@ -238,6 +253,20 @@ int interface_task(void) {
                 }
             } else {
                 m_library.print("tip");
+            }
+            m_library.setTextSize(1);
+            struct power_option contract;
+            res = power_contract_get(&contract);
+            if (res < 0) {
+                m_library.setCursor(11 * 6, 0);
+                m_library.printf("%4.1fV", 12.3);
+                m_library.setCursor(11 * 6, 9);
+                m_library.printf("%3.1fA", 2.5);
+            } else {
+                m_library.setCursor(11 * 6, 0);
+                m_library.printf("%4.1fV", 12.3);
+                m_library.setCursor(12 * 6, 9);
+                m_library.printf("%3.1fA", 2.5);
             }
             m_library.display();
 

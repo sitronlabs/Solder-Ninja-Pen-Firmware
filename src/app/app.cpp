@@ -2,6 +2,7 @@
 #include "app.h"
 
 /* Project */
+#include "app/power/power.h"
 #include "element/element.h"
 #include "log/log.h"
 
@@ -20,6 +21,13 @@ static float m_target = 300;
  */
 int app_setup(void) {
     int res;
+
+    /* Setup power negotiator */
+    res = power_setup();
+    if (res < 0) {
+        log_e("Failed to setup power negotiator!");
+        return -1;
+    }
 
     /* Setup heating element */
     res = element_setup();
@@ -137,6 +145,9 @@ int app_heating_status_get(void) {
 int app_task(void) {
 
     // App has no splash, but rather starts in the locked state
+
+    /* Power negotiatior task */
+    power_task();
 
     /* Heating element task */
     element_task();

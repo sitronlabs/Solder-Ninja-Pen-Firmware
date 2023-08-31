@@ -4,31 +4,34 @@
 /* Setup */
 int power_setup(void);
 
-/* */
-enum power_source {
-    POWER_SOURCE_USB_BC,  //!< USB Battery Charging
-    POWER_SOURCE_USB_TC,  //!< USB Type-C (5V 3A max)
-    POWER_SOURCE_USB_PD,  //!< USB Power Delivery
-    POWER_SOURCE_USB_QC,  //!< High Voltage Dedicated Charging Port
-} source;
-
-/* */
-enum power_type {
-    POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,   //!< Table 6-9 Fixed Supply PDO - Source
-    POWER_TYPE_VARIABLE_VOLTAGE_FIXED_CURRENT,  //!< Table 6-11 Variable Supply (non-Battery) PDO - Source
-    POWER_TYPE_VARIABLE_VOLTAGE_FIXED_POWER,    //!< Table 6-12 Battery Supply PDO - Source
+/* List of the possible power providers */
+enum power_provider {
+    POWER_PROVIDER_USB_BC,  //!< Battery Charging 1.2
+    POWER_PROVIDER_USB_TC,  //!< Type-C (5V 3A max)
+    POWER_PROVIDER_USB_PD,  //!< Power Delivery
+    POWER_PROVIDER_USB_QC,  //!< High Voltage Dedicated Charging Port
+    POWER_PROVIDER_USB_VO,  //!< Voltage Open Multi-Step Constant-Current Charging
 };
 
-/* Contract */
-struct power_contract {
-    enum power_source source;
+/* List of the possible power options*/
+enum power_type {
+    POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,   //!< Table 6-9 Fixed Supply PDO - Provider
+    POWER_TYPE_VARIABLE_VOLTAGE_FIXED_CURRENT,  //!< Table 6-11 Variable Supply (non-Battery) PDO - Provider / Table 6-8 Variable Supply (non-Battery) PDO - Source
+    POWER_TYPE_VARIABLE_VOLTAGE_FIXED_POWER,    //!< Table 6-12 Battery Supply PDO - Provider                / Table 6-9 Battery Supply PDO - Source
+};
+
+/* */
+struct power_option {
+    enum power_provider provider;
     enum power_type type;
     float voltage_min;
     float voltage_max;
     float current_max;
     float power_max;
 };
-int power_contract_get(struct power_contract *contract);
+
+/* Contract */
+int power_contract_get(struct power_option *contract);
 
 /* Periodic task */
 int power_task(void);
