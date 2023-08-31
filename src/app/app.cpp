@@ -104,10 +104,17 @@ float app_target_get(void) {
  * @return
  */
 int app_target_increase(void) {
+
+    /* */
     m_target += 10;
     if (m_target > CONFIG_APP_TARGET_MAX) {
         m_target = CONFIG_APP_TARGET_MAX;
     }
+
+    /* Pass along */
+    element_temperature_target_set(m_target);
+
+    /* Return success */
     return 0;
 }
 
@@ -117,14 +124,25 @@ int app_target_increase(void) {
  * @return
  */
 int app_target_decrease(void) {
+
+    /* */
     m_target -= 10;
     if (m_target < CONFIG_APP_TARGET_MIN) {
         m_target = CONFIG_APP_TARGET_MIN;
     }
+
+    /* Pass along */
+    element_temperature_target_set(m_target);
+
+    /* Return success */
     return 0;
 }
 
 int app_heating_turn_on(void) {
+
+    /* Pass along */
+    element_temperature_target_set(m_target);
+    element_heating_enable();
 
     /* Return success */
     return 0;
@@ -132,11 +150,14 @@ int app_heating_turn_on(void) {
 
 int app_heating_turn_off(void) {
 
+    /* Pass along */
+    element_heating_disable();
+
     /* Return success */
     return 0;
 }
 
-int app_heating_status_get(void) {
+int app_heating_enabled_get(void) {
 
     /* Return success */
     return 0;

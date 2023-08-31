@@ -2,9 +2,11 @@
 #include "power.h"
 
 /* Project */
+#include "errors/errors.h"
 #include "log/log.h"
 
 /* Arduino libraries */
+#include <dac5311.h>
 #include <fsusb43.h>
 #include <fusb302.h>
 #include <pi3usb9281c.h>
@@ -12,16 +14,11 @@
 /* Config */
 #define POWER_OPTIONS_LIMIT 10
 
-/* */
+/* Peripherals */
 static fsusb43 m_fsusb43;
 static fusb302 m_fusb302;
 static pi3usb9281c m_pi3usb9281;
-static int m_qc_dn_h_pin = 16;
-static int m_qc_dn_l_pin = 17;
-static int m_qc_dp_h_pin = 18;
-static int m_qc_dp_l_pin = 19;
-static int m_qc_dn_m_pin = 29;
-static int m_qc_dp_m_pin = 28;
+static dac5311 m_dac;
 
 /* Internal list of power options */
 static struct {
@@ -31,6 +28,53 @@ static struct {
 
 /* Power contract, an index within the power options */
 static unsigned int m_contract;
+
+/* Other local variables */
+static int m_qc_dn_h_pin = 16;
+static int m_qc_dn_l_pin = 17;
+static int m_qc_dp_h_pin = 18;
+static int m_qc_dp_l_pin = 19;
+static int m_qc_dn_m_pin = 29;
+static int m_qc_dp_m_pin = 28;
+
+/**
+ *
+ * @return
+ */
+static int m_adjust_buck(const float power_limit) {
+
+    /* Compute buck voltage */
+    float buck_voltage = sqrt(((power_limit)*0.80) * 2.1);
+    log_d("Using buck voltage of %.2fV.", buck_voltage);
+
+    /* Configure dac5311 */
+    const float rtop = 590 * 1000;
+    const float rbot = 63.4 * 1000;
+    const float rdac = 300 * 1000;
+    const float vref = 0.7;
+    for (uint16_t i = 0; i < 256; i++) {
+        float vdac = 3.3 * (i / 255.00);
+        float vout = vref * (1 + rtop / rbot) + (vref - vdac) * (rtop / rdac);
+
+        /* Voltage for setting matches desired one */
+        if (vout <= buck_voltage) {
+
+            /* Update dac */
+            log_d("Using vdac %.2fV for vout %.2fV.", vdac, vout);
+            int res = m_dac.output_voltage_set(vdac);
+            if (res < 0) {
+                log_e("Failed to configure dac!");
+                return -1;
+            }
+
+            /* Return success */
+            return 0;
+        }
+    }
+
+    /* Return failure */
+    return -1;
+}
 
 /**
  *
@@ -75,8 +119,10 @@ static int m_options_add(struct power_option &option) {
 
             /* Return wether or not the new option offers more power */
             if (m_option_power_max_compute(option) > power_max) {
+                m_adjust_buck(m_option_power_max_compute(option));  // Temp
                 return 1;
             } else {
+                m_adjust_buck(power_max);  // Temp
                 return 0;
             }
         }
@@ -98,7 +144,7 @@ int power_setup(void) {
     res = m_pi3usb9281.setup(Wire, 0x25, 7);  // TODO R4
     if (res < 0) {
         log_e("Failed to setup pi3usb9281 ic!");
-        return -1;
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
 
     /* Setup usb mux */
@@ -109,11 +155,27 @@ int power_setup(void) {
     res = m_fusb302.setup(Wire, 0x22);
     if (res < 0) {
         log_e("Failed to setup fusb302 ic!");
-        return -1;
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
     // TODO Enable automatic retransmission
     // TODO Flush RX buffer (is it necessary after reset???)
     // TODO Flush TX (same question)
+
+#if R4J
+    /* Setup dac for dc-dc regulation */
+    res = m_dac.setup(SPI, 8000000, PA1, 3.3);
+    if (res < 0) {
+        log_e("Failed to setup dac!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+#elif R8A
+    /* Setup dac for dc-dc regulation */
+    res = m_dac.setup(SPI1, 8000000, 20, 3.3);
+    if (res < 0) {
+        log_e("Failed to setup dac!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+#endif
 
     /* Return success */
     return 0;
@@ -151,6 +213,34 @@ int power_contract_get(struct power_option *contract) {
     // } else {
     //     return -1;
     // }
+}
+
+/**
+ * @brief
+ * @param power_limit
+ * @return
+ */
+int power_negotiated_power_limit_get(float *const power_limit) {
+
+    /* Find out the maximum amount of power offered by the options already in the list */
+    float power_max = 0;
+    int index_max = -1;
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        if (m_options[i].assigned == true) {
+            float power_iter = m_option_power_max_compute(m_options[i].option);
+            if (power_iter > power_max) {
+                power_max = power_iter;
+                index_max = i;
+            }
+        }
+    }
+    if (index_max >= 0) {
+        *power_limit = power_max;
+        return 0;
+    } else {
+        *power_limit = 0;
+        return -1;
+    }
 }
 
 /**
@@ -556,6 +646,7 @@ int power_task(void) {
                     break;
                 }
             }
+            log_i("HVDCP handshake completed.");
 
             /* Move on */
             m_timestamp = millis();

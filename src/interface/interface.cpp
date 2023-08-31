@@ -212,6 +212,7 @@ int interface_task(void) {
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_SHORT: {
                     app_unlock(APP_LOCK_SOURCE_BUTTONS);
+                    app_heating_turn_on();  // TODO Redundant, integrate into lock/unlock
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
@@ -290,10 +291,12 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
+                    app_heating_turn_off();  // TODO Redundant, integrate into lock/unlock
                     app_lock(APP_LOCK_SOURCE_BUTTONS);
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
+                    app_heating_turn_off();  // TODO Redundant, integrate into lock/unlock
                     app_lock(APP_LOCK_SOURCE_BUTTONS);
                     m_sm = STATE_7_MENU;
                     break;
