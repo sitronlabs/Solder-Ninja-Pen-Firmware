@@ -334,7 +334,7 @@ int power_task(void) {
         case STATE_BC_1: {
 
             /* Inspired by the chromebook-ec provider code, perform a debounce.
-             * @see https://git.furworks.de/coreboot-mirror/chrome-ec/src/branch/master/driver/bc12/pi3usb9281.c */
+             * @see https://git.furworks.de/coreboot-mirror/chrome-ec/src/commit/1e800ac838504c0d2950c7aa90cdfe7bde251545/driver/bc12/pi3usb9281.c#L314 */
             res = m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_OPEN);
             if (res < 0) {
                 log_e("Failed to configure usb switches!");
@@ -351,12 +351,13 @@ int power_task(void) {
 
         case STATE_BC_2: {
 
-            /* Wait */
-            if (millis() - m_timestamp < 1000) {
+            /* Leave the switches open for 2 seconds before performing a new detection,
+             * less than that seems to not reliabily detect some chargers. */
+            if (millis() - m_timestamp < 2000) {
                 break;
             }
 
-            /* Reset ic */
+            /* Reset ic which will automatically perform a new detection */
             res = m_pi3usb9281.reset();
             if (res < 0) {
                 log_e("Failed to reset ic!");
@@ -374,7 +375,7 @@ int power_task(void) {
         case STATE_BC_3: {
 
             /* Wait */
-            if (millis() - m_timestamp < 100) {
+            if (millis() - m_timestamp < 15) {
                 break;
             }
 
