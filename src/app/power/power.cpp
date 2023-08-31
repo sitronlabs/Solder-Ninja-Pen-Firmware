@@ -16,10 +16,12 @@
 static fsusb43 m_fsusb43;
 static fusb302 m_fusb302;
 static pi3usb9281c m_pi3usb9281;
-static int m_qc_dp_h_pin = 18;
-static int m_qc_dp_l_pin = 19;
 static int m_qc_dn_h_pin = 16;
 static int m_qc_dn_l_pin = 17;
+static int m_qc_dp_h_pin = 18;
+static int m_qc_dp_l_pin = 19;
+static int m_qc_dn_m_pin = 29;
+static int m_qc_dp_m_pin = 28;
 
 /* Internal list of power options */
 static struct {
@@ -29,6 +31,7 @@ static struct {
 
 /* Power contract, an index within the power options */
 static unsigned int m_contract;
+
 /**
  *
  */
@@ -159,12 +162,14 @@ int power_task(void) {
     int res;
 
     /* State machine
-     * 1) Perform a usb-pd discovery
-     * 2) Perform a usb-bc discovery
-     * 3) Try hvdcp if possible */
+     * 1) Try usb tc
+     * 2) Try usb bc
+     * 3) Try usb pd
+     * 4) Try usb hvdcp if pd didn't give anything */
     static uint8_t m_errors_tc;
     static uint8_t m_errors_bc;
     static uint8_t m_errors_qc;
+    static bool m_dcp_detected;
     static uint32_t m_timestamp;
     static enum {
         STATE_IDLE,
@@ -177,18 +182,25 @@ int power_task(void) {
         STATE_BC_3,
         STATE_BC_4,
         STATE_BC_5,
+        STATE_PD_0,
         STATE_QC_0,
         STATE_QC_1,
         STATE_QC_2,
         STATE_QC_3,
         STATE_QC_4,
         STATE_QC_5,
-        STATE_PD_0,
+        STATE_QC_10,
         STATE_DONE,
     } m_sm;
     switch (m_sm) {
 
         case STATE_IDLE: {
+
+            /* Reset error counters and flags */
+            m_errors_tc = 0;
+            m_errors_bc = 0;
+            m_errors_qc = 0;
+            m_dcp_detected = false;
 
             /* Clear list of options */
             for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
@@ -441,10 +453,9 @@ int power_task(void) {
             };
             m_options_add(option);
 
-            /* Try hvcdp */
+            /* Try hvdcp later if pd doesn't give anything */
             if (type == PI3USB9281C_DEVICE_TYPE_USB_DCP) {
-                m_sm = STATE_QC_0;
-                break;
+                m_dcp_detected = true;
             }
 
             /* Move on */
@@ -459,9 +470,26 @@ int power_task(void) {
             break;
         }
 
+        case STATE_PD_0: {
+
+            /* Skip for now */
+            m_sm = STATE_QC_0;
+            break;
+        }
+
         case STATE_QC_0: {
 
-            // TODO m_errors_qc
+            /* Only look into hvdcp if we found a dcp charger */
+            if (m_dcp_detected != true) {
+                m_sm = STATE_QC_10;
+            }
+
+            /* Don't retry too many times */
+            if (m_errors_qc > 5) {
+                log_e("Too many errors!");
+                m_sm = STATE_QC_10;
+                break;
+            }
 
             /* Move on */
             m_sm = STATE_QC_1;
@@ -469,6 +497,14 @@ int power_task(void) {
         }
 
         case STATE_QC_1: {
+
+            /* Reset all the pins as inputs */
+            pinMode(m_qc_dn_h_pin, INPUT);
+            pinMode(m_qc_dn_m_pin, INPUT);
+            pinMode(m_qc_dn_l_pin, INPUT);
+            pinMode(m_qc_dp_h_pin, INPUT);
+            pinMode(m_qc_dp_m_pin, INPUT);
+            pinMode(m_qc_dp_l_pin, INPUT);
 
             /* Route usb signal to resistor network */
             if (m_fsusb43.output_select(FSUSB43_OUTPUT_2) < 0 ||
@@ -486,11 +522,15 @@ int power_task(void) {
 
         case STATE_QC_2: {
 
-            /* Apply 0.325V-2V to D+ line */
-            pinMode(m_qc_dn_h_pin, OUTPUT);
-            digitalWrite(m_qc_dn_h_pin, HIGH);
-            pinMode(m_qc_dn_l_pin, OUTPUT);
-            digitalWrite(m_qc_dn_l_pin, LOW);
+            /* Advertise that we are a hvdcp compliant sink device
+             * by setting 0.325V - 2V to D+ for at least 1.25 seconds */
+            pinMode(m_qc_dp_h_pin, OUTPUT);
+            pinMode(m_qc_dp_l_pin, OUTPUT);
+            digitalWrite(m_qc_dp_h_pin, HIGH);
+            digitalWrite(m_qc_dp_l_pin, LOW);
+
+            /* Configure ADC on D- pin */
+            analogRead(A3);
 
             /* Move on */
             m_timestamp = millis();
@@ -501,32 +541,80 @@ int power_task(void) {
         case STATE_QC_3: {
 
             /* Wait */
-            if (millis() - m_timestamp < 100) {
+            if (millis() - m_timestamp < 1000) {
                 break;
             }
 
+            /* Wait for D- pin to be pulled low by the source with a timeout */
+            float pin_dn_voltage = (3.3 * analogRead(A3)) / 1023.0;
+            if (pin_dn_voltage > 0.2) {
+                if (millis() - m_timestamp > 3000) {
+                    log_w("HVDCP handshake timed out.");
+                    m_sm = STATE_QC_10;
+                    break;
+                } else {
+                    break;
+                }
+            }
+
             /* Move on */
+            m_timestamp = millis();
             m_sm = STATE_QC_4;
             break;
         }
 
         case STATE_QC_4: {
 
+            /* Wait */
+            if (millis() - m_timestamp < 2) {
+                break;
+            }
+
+            /* Ask for 12V */
+            log_d("Asking for 12V");
+            pinMode(m_qc_dp_h_pin, OUTPUT);
+            pinMode(m_qc_dp_l_pin, OUTPUT);
+            digitalWrite(m_qc_dp_h_pin, HIGH);
+            digitalWrite(m_qc_dp_l_pin, LOW);
+            pinMode(m_qc_dn_h_pin, OUTPUT);
+            pinMode(m_qc_dn_l_pin, OUTPUT);
+            digitalWrite(m_qc_dn_h_pin, HIGH);
+            digitalWrite(m_qc_dn_l_pin, LOW);
+
             /* Move on */
+            m_timestamp = millis();
             m_sm = STATE_QC_5;
             break;
         }
 
         case STATE_QC_5: {
 
+            /* Wait */
+            if (millis() - m_timestamp < 60) {
+                break;
+            }
+
+            /* Confirm vbus is now 12V */
+            // TODO
+
+            /* Add power option */
+            struct power_option option = {
+                .provider = POWER_PROVIDER_USB_QC,
+                .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                .voltage_min = 12.0,
+                .voltage_max = 12.0,
+                .current_max = 1.5,
+            };
+            m_options_add(option);
+
             /* Move on */
-            m_sm = STATE_QC_4;
+            m_sm = STATE_QC_10;
             break;
         }
 
-        case STATE_PD_0: {
+        case STATE_QC_10: {
 
-            /* Skip for now */
+            /* Move on */
             m_sm = STATE_DONE;
             break;
         }
