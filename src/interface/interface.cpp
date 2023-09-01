@@ -31,7 +31,6 @@ static enum {
     STATE_6_MONITOR_ADJUST,
     STATE_7_MENU,
 } m_sm;
-static float m_temperature_c;
 
 /* Icon bitmaps */
 const uint8_t m_icon_ninja[32] = {0x03, 0xF8, 0x07, 0xFC, 0x0F, 0xFE, 0xDF, 0xFF, 0x7F, 0xFF, 0x78, 0x03, 0x73, 0x33, 0x73, 0x31, 0xF0, 0x03, 0x1F, 0xFF, 0x1F, 0xFF, 0x1F, 0xFE, 0x0F, 0xFE, 0x0F, 0xFC, 0x07, 0xF8, 0x01, 0xF0};
@@ -185,8 +184,7 @@ int interface_task(void) {
                 if (res < 0) {
                     m_library.print("err");
                 } else {
-                    m_temperature_c = (temperature_c + 9 * m_temperature_c) / 10.0;
-                    m_library.printf("%03.0f", m_temperature_c);                              // TODO Use settings to change units
+                    m_library.printf("%03.0f", temperature_c);                                // TODO Use settings to change units
                     m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
                 }
             } else {
