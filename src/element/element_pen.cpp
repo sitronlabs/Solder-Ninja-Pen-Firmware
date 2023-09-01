@@ -14,21 +14,21 @@
 
 /* Config */
 #include "../../cfg/config.h"
-#define CONFIG_TIP_TIME_COOLDOWN 120      //!< Amount of time, in milliseconds, to wait before measuring temperature.
+#define CONFIG_TIP_TIME_COOLDOWN 10       //!< Amount of time, in milliseconds, to wait before measuring temperature.
 #define CONFIG_TIP_TIME_CYCLE_LIMIT 1000  //!< Maximum amount of time, in milliseconds, that a measuring plus heating cycle should take.
+#define ELEMENT_READINGS_CONSECUTIVE 10
 
 /* Peripherals */
 static max31855 m_thermocouple_afe;
 
-/* Filter library */
-static RunningMedian m_temperature_filter = RunningMedian(255);
-
-/* PID library */
+/* PID library
+ * As a base starting point for the coefficients, we can make the following approximation
+ * For a mass of 2g of steel, a change of 1°C requires 0.93J
+ * @see https://www.omnicalculator.com/physics/specific-heat */
 static double m_pid_input = 0;
 static double m_pid_target = 0;
 static double m_pid_output = 0;
-// static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 1, 0, 0, P_ON_M, DIRECT);
-static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 1, 0, 0, P_ON_E, DIRECT);
+static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 1, 0.1, 0, P_ON_E, DIRECT);
 
 /* Other local variables */
 static float m_temperature_measured_c;
@@ -97,7 +97,13 @@ int element_temperature_measured_get(float &temperature_c) {
     if (m_element_connected) {
         // TODO As an improvement, return an estimate of the temperature if the last measurement has been performed a while ago
         // use m_temperature_measured_timestamp and a coefficient?
-        temperature_c = m_temperature_measured_c;
+
+        if (fabs(m_temperature_measured_c - m_temperature_target_c) <= 2) {
+            temperature_c = m_temperature_target_c;
+        } else {
+            temperature_c = m_temperature_measured_c;
+        }
+
         return 0;
     } else {
         return -ERROR_GENERIC;  // TODO More specifi error code
@@ -153,40 +159,62 @@ int element_task(void) {
 
         case STATE_0: {
 
-            /* Read information from thermocouple afe */
-            float temperature_thermocouple_c = 0;
-            float temperature_internal_c = 0;
-            bool is_shorted_vcc = false;
-            bool is_shorted_gnd = false;
-            bool is_open = false;
-            res = m_thermocouple_afe.read(temperature_thermocouple_c, temperature_internal_c, is_shorted_vcc, is_shorted_gnd, is_open);
-            if (res < 0) {
-                m_element_connected = false;
-                m_sm = STATE_ERROR;
-                return 0;
+            /* Because temperature readings can be affected by electrically noisy environments,
+             * we average a few */
+            m_element_connected = true;
+            RunningMedian filter = RunningMedian(ELEMENT_READINGS_CONSECUTIVE);
+            uint32_t t1 = millis();
+            for (unsigned int i = 0; i < ELEMENT_READINGS_CONSECUTIVE;) {
+
+                /* Read information from thermocouple afe */
+                float temperature_thermocouple_c = 0;
+                float temperature_internal_c = 0;
+                bool is_shorted_vcc = false;
+                bool is_shorted_gnd = false;
+                bool is_open = false;
+                res = m_thermocouple_afe.read(temperature_thermocouple_c, temperature_internal_c, is_shorted_vcc, is_shorted_gnd, is_open);
+                if (res < 0) {
+                    m_element_connected = false;
+                    m_sm = STATE_ERROR;
+                    return 0;
+                }
+
+                /* Compensate temperature
+                 * Probably because we got the type of thermocouple wrong */
+                temperature_thermocouple_c = 2.3482 * temperature_thermocouple_c - 47.426;
+
+                /* Log */
+                // log_t("temperature[%u] = %f", i, temperature_thermocouple_c);
+
+                /* Ensure tip is connected */
+                if (is_shorted_vcc || is_open) {
+                    m_element_connected = false;
+                    break;
+                }
+
+                /* Discard abnormal values */
+                if (temperature_thermocouple_c < 0 || temperature_thermocouple_c > 500) {
+                    continue;
+                }
+
+                /* Run temperature through filter */
+                filter.add(temperature_thermocouple_c);
+
+                /* Increment the number of valid readings */
+                i++;
             }
 
-            // TODO Mean of a few measurements
+            /* Retrieve mean */
+            float temperature_thermocouple_c = filter.getMedian();
 
-            /* Ensure tip is connected */
-            if (is_shorted_vcc || is_open) {
-                m_element_connected = false;
-                break;
-            } else {
-                m_element_connected = true;
-            }
-
-            /* Compensate and filter temperature
-             * The use of a mean filter helps with electronically noisy environments */
-            temperature_thermocouple_c = 2.3482 * temperature_thermocouple_c - 47.426;
-            m_temperature_filter.add(temperature_thermocouple_c);
-            temperature_thermocouple_c = m_temperature_filter.getMedian();
+            /* Log */
+            log_t("temperature    = %f, took %u ms", temperature_thermocouple_c, (millis() - t1));
 
             /* Store temperature */
             m_temperature_measured_c = temperature_thermocouple_c;
             m_temperature_measured_timestamp = millis();
 
-            /* Move on to heating if enabled*/
+            /* Move on to heating if enabled */
             if (m_heating_enabled) {
                 m_pid.SetMode(AUTOMATIC);
                 m_sm = STATE_1;
@@ -222,6 +250,12 @@ int element_task(void) {
             /* Log */
             log_t("Pid %f / %f -> %f J (%d ms)", m_pid_input, m_pid_target, m_pid_output, m_heating_duration);
 
+            /* */
+            if (m_heating_duration <= 0) {
+                m_timestamp_last_cycle = millis();
+                m_sm = STATE_0;
+                break;
+            }
 /* Turn on dc-dc */
 #if R4J
             digitalWrite(PC14, HIGH);
