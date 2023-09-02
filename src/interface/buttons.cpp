@@ -9,6 +9,7 @@ enum buttons_states {
     STATE_0,
     STATE_1,
     STATE_2,
+    STATE_3,
 };
 
 /* */
@@ -77,13 +78,8 @@ int buttons_task(void) {
             /* Compute amount of time button has been pressed */
             uint32_t duration = millis() - m_buttons[0].timestamp;
 
-            /* If combined button is pressed ignore the rest */
-            if (m_buttons[1].pressed) {
-                m_buttons[0].sm = STATE_0;
-            }
-
             /* Handle short press */
-            else if (m_buttons[0].pressed != true) {
+            if (m_buttons[0].pressed != true) {
                 if (duration > CONFIG_BUTTONS_PRESS_SHORT_DURATION && duration < CONFIG_BUTTONS_PRESS_LONG_DURATION) {
                     m_event = BUTTONS_EVENT_LEFT_SHORT;
                 }
@@ -104,16 +100,11 @@ int buttons_task(void) {
             /* Compute amount of time button has been pressed */
             uint32_t duration = millis() - m_buttons[0].timestamp;
 
-            /* If combined button is pressed ignore the rest */
-            if (m_buttons[1].pressed) {
-                m_buttons[0].sm = STATE_0;
-            }
-
             /* Handle long press */
-            else if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
+            if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
                 m_event = BUTTONS_EVENT_LEFT_LONG;
                 m_buttons[0].timestamp = millis();
-            } else if (!m_buttons[0].pressed) {
+            } else if (m_buttons[0].pressed != true) {
                 m_buttons[0].sm = STATE_0;
             }
             break;
@@ -143,13 +134,8 @@ int buttons_task(void) {
             /* Compute amount of time button has been pressed */
             uint32_t duration = millis() - m_buttons[2].timestamp;
 
-            /* If combined button is pressed ignore the rest */
-            if (m_buttons[1].pressed) {
-                m_buttons[2].sm = STATE_0;
-            }
-
             /* Handle short press */
-            else if (m_buttons[2].pressed != true) {
+            if (m_buttons[2].pressed != true) {
                 if (duration > CONFIG_BUTTONS_PRESS_SHORT_DURATION && duration < CONFIG_BUTTONS_PRESS_LONG_DURATION) {
                     m_event = BUTTONS_EVENT_RIGHT_SHORT;
                 }
@@ -170,16 +156,11 @@ int buttons_task(void) {
             /* Compute amount of time button has been pressed */
             uint32_t duration = millis() - m_buttons[2].timestamp;
 
-            /* If combined button is pressed ignore the rest */
-            if (m_buttons[1].pressed) {
-                m_buttons[2].sm = STATE_0;
-            }
-
             /* Handle long press */
-            else if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
+            if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
                 m_event = BUTTONS_EVENT_RIGHT_LONG;
                 m_buttons[2].timestamp = millis();
-            } else if (!m_buttons[2].pressed) {
+            } else if (m_buttons[2].pressed != true) {
                 m_buttons[2].sm = STATE_0;
             }
             break;
@@ -206,6 +187,10 @@ int buttons_task(void) {
 
         case STATE_1: {
 
+            /* As long as the combined button is pressed, disable the individual ones */
+            m_buttons[0].sm = STATE_0;
+            m_buttons[2].sm = STATE_0;
+
             /* Compute amount of time button has been pressed */
             uint32_t duration = millis() - m_buttons[1].timestamp;
 
@@ -214,7 +199,7 @@ int buttons_task(void) {
                 if (duration > CONFIG_BUTTONS_PRESS_SHORT_DURATION && duration < CONFIG_BUTTONS_PRESS_LONG_DURATION) {
                     m_event = BUTTONS_EVENT_BOTH_SHORT;
                 }
-                m_buttons[1].sm = STATE_0;
+                m_buttons[1].sm = STATE_3;
             }
 
             /* Handle long press */
@@ -228,6 +213,10 @@ int buttons_task(void) {
 
         case STATE_2: {
 
+            /* As long as the combined button is pressed, disable the individual ones */
+            m_buttons[0].sm = STATE_0;
+            m_buttons[2].sm = STATE_0;
+
             /* Compute amount of time button has been pressed */
             uint32_t duration = millis() - m_buttons[1].timestamp;
 
@@ -235,9 +224,25 @@ int buttons_task(void) {
             if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
                 m_event = BUTTONS_EVENT_BOTH_LONG;
                 m_buttons[1].timestamp = millis();
-            } else if (!m_buttons[1].pressed) {
-                m_buttons[1].sm = STATE_0;
+            } else if (m_buttons[1].pressed != true) {
+                m_buttons[1].sm = STATE_3;
             }
+            break;
+        }
+
+        case STATE_3: {
+
+            /* As long as the combined button is pressed, disable the individual ones */
+            m_buttons[0].sm = STATE_0;
+            m_buttons[2].sm = STATE_0;
+
+            /* Wait for both buttons to be released */
+            if (m_buttons[0].pressed == true || m_buttons[2].pressed == true) {
+                break;
+            }
+
+            /* Move on*/
+            m_buttons[1].sm = STATE_0;
             break;
         }
 

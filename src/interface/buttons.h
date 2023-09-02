@@ -8,14 +8,10 @@
 #include <errno.h>
 #include <stdint.h>
 
-/**
- * @brief
- * @param
- * @return
- */
+/* Setup */
 int buttons_setup(void);
 
-/* Retrieve events */
+/* Events */
 enum buttons_event {
     BUTTONS_EVENT_NONE,
     BUTTONS_EVENT_LEFT_SHORT,
@@ -27,9 +23,7 @@ enum buttons_event {
 };
 enum buttons_event buttons_event_get(void);
 
-/**
- *
- */
+/* Task */
 int buttons_task(void);
 
 #endif
