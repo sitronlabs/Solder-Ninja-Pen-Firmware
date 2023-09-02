@@ -28,17 +28,19 @@ static max31855 m_thermocouple_afe;
 static double m_pid_input = 0;
 static double m_pid_target = 0;
 static double m_pid_output = 0;
-static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 1, 0.1, 0, P_ON_E, DIRECT);
+static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 0.93, 0.001, 0, P_ON_E, DIRECT);
 
 /* Other local variables */
 static float m_power_limit;
 static float m_temperature_measured_c;
+static float m_temperature_reported_c;
 static float m_temperature_target_c;
-static uint32_t m_temperature_measured_timestamp;
 static bool m_element_connected;
 static bool m_heating_enabled;
-static uint32_t m_timestamp;
-static uint32_t m_timestamp_last_cycle;
+static uint32_t m_timestamp_tip_connected;
+static uint32_t m_timestamp_cycle_start;
+static uint32_t m_timestamp_temperature_read;
+static uint32_t m_timestamp_pid_computed;
 static uint32_t m_heating_duration;
 
 /**
@@ -101,27 +103,8 @@ int element_temperature_measured_get(float &temperature_c) {
         return -ERROR_GENERIC;  // TODO More specific error code
     }
 
-    /* If we are currently heating
-     * return an an estimate of the temperature */
-    if (m_heating_enabled == true && m_heating_duration > 0) {
-
-        /* Get time ellapsed */
-        uint32_t time_ellapsed = millis() - m_temperature_measured_timestamp;
-        const float m = 0.002;
-        const float c = 466;
-        float energy = m_power_limit * (time_ellapsed / 1000.0);
-        float temperature_increase = energy / (m * c);
-        temperature_c = m_temperature_measured_c + temperature_increase;
-        // log_t("")
-    }
-
-    /* Otherwise
-     * return the last measured temperature */
-    else {
-        temperature_c = m_temperature_measured_c;
-    }
-
     /* Return success */
+    temperature_c = m_temperature_reported_c;
     return 0;
 }
 
@@ -178,101 +161,160 @@ int element_task(void) {
 
     /* State machine */
     static enum {
-        STATE_0,
-        STATE_1,
-        STATE_2,
-        STATE_3,
+        STATE_0_DISCONNECTED,
+        STATE_1_DEBOUNCE,
+        STATE_2_DISABLED,
+        STATE_3_START,
+        STATE_4_READ,
+        STATE_5_HEAT,
         STATE_ERROR,
     } m_sm;
     switch (m_sm) {
 
-        case STATE_0: {
+        case STATE_0_DISCONNECTED: {
 
-            /* Because temperature readings can be affected by electrically noisy environments,
-             * we average a few */
-            m_element_connected = true;
-            RunningMedian filter = RunningMedian(ELEMENT_READINGS_CONSECUTIVE);
-            uint32_t t1 = millis();
-            for (unsigned int i = 0; i < ELEMENT_READINGS_CONSECUTIVE;) {
+            /* Ensure pid is disabled */
+            m_pid.SetMode(MANUAL);
 
-                /* Read information from thermocouple afe */
-                float temperature_thermocouple_c = 0;
-                float temperature_internal_c = 0;
-                bool is_shorted_vcc = false;
-                bool is_shorted_gnd = false;
-                bool is_open = false;
-                res = m_thermocouple_afe.read(temperature_thermocouple_c, temperature_internal_c, is_shorted_vcc, is_shorted_gnd, is_open);
-                if (res < 0) {
-                    m_element_connected = false;
-                    m_sm = STATE_ERROR;
-                    return 0;
-                }
+            /* Report tip as disconnected for now */
+            m_element_connected = false;
 
-                /* Compensate temperature
-                 * Probably because we got the type of thermocouple wrong */
-                temperature_thermocouple_c = 2.3482 * temperature_thermocouple_c - 47.426;
-
-                /* Ensure tip is connected */
-                if (is_shorted_vcc || is_open) {
-                    m_element_connected = false;
-                    log_t("Not connected");
-                    break;
-                }
-
-                /* Discard abnormal values */
-                if (temperature_thermocouple_c < 0 || temperature_thermocouple_c > 500) {
-                    log_t("Read %4.0f invalid", temperature_thermocouple_c);
-                    continue;
-                }
-
-                /* Log */
-                log_t("Read %4.0f valid", temperature_thermocouple_c);
-
-                /* Run temperature through filter */
-                filter.add(temperature_thermocouple_c);
-
-                /* Increment the number of valid readings */
-                i++;
+            /* Read information from thermocouple afe */
+            float temperature_thermocouple_c = 0;
+            float temperature_internal_c = 0;
+            bool is_shorted_vcc = false;
+            bool is_shorted_gnd = false;
+            bool is_open = false;
+            res = m_thermocouple_afe.read(temperature_thermocouple_c, temperature_internal_c, is_shorted_vcc, is_shorted_gnd, is_open);
+            if (res < 0) {
+                m_sm = STATE_ERROR;
+                break;
             }
 
-            /* Retrieve mean */
-            float temperature_thermocouple_c = filter.getMedian();
-
-            /* Log */
-            log_t("Filt %4.0f, took %u ms", temperature_thermocouple_c, (millis() - t1));
-
-            /* Store temperature */
-            m_temperature_measured_c = temperature_thermocouple_c;
-            m_temperature_measured_timestamp = millis();
-
-            /* Move on to heating if enabled */
-            if (m_heating_enabled) {
-                m_pid.SetMode(AUTOMATIC);
-                m_sm = STATE_1;
-            } else {
-                m_pid.SetMode(MANUAL);
+            /* Wait for tip to be connected */
+            if (is_shorted_vcc == true || is_open == true) {
+                m_sm = STATE_0_DISCONNECTED;
+                break;
             }
+
+            /* Move on */
+            m_timestamp_tip_connected = millis();
+            m_sm = STATE_1_DEBOUNCE;
             break;
         }
 
-        case STATE_1: {  // Start heating if possible
+        case STATE_1_DEBOUNCE: {
 
-            /* Ask negotiator how much power we can draw */
+            /* Wait a little bit after insertion */
+            if (millis() - m_timestamp_tip_connected < 100) {
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_2_DISABLED;
+            break;
+        }
+
+        case STATE_2_DISABLED: {
+
+            /* Ensure pid is disabled */
+            m_pid.SetMode(MANUAL);
+
+            /* Move on */
+            m_sm = STATE_3_START;
+            break;
+        }
+
+        case STATE_3_START: {
+
+            /* Remember cycle start time */
+            m_timestamp_cycle_start = millis();
+
+            /* Move on */
+            m_sm = STATE_4_READ;
+            break;
+        }
+
+        case STATE_4_READ: {
+
+            /* Don't read more often than half the sample rate of the afe */
+            if (millis() - m_timestamp_temperature_read < 35) {
+                break;
+            }
+
+            /* Read information from thermocouple afe */
+            float temperature_thermocouple_c = 0;
+            float temperature_internal_c = 0;
+            bool is_shorted_vcc = false;
+            bool is_shorted_gnd = false;
+            bool is_open = false;
+            res = m_thermocouple_afe.read(temperature_thermocouple_c, temperature_internal_c, is_shorted_vcc, is_shorted_gnd, is_open);
+            if (res < 0) {
+                m_sm = STATE_ERROR;
+                return 0;
+            }
+
+            /* Ensure tip is connected */
+            if (is_shorted_vcc == true || is_open == true) {
+                m_sm = STATE_0_DISCONNECTED;
+                break;
+            }
+
+            /* Report tip as connected */
+            m_element_connected = true;
+
+            /* Compensate temperature,
+             * probably because we got the type of thermocouple wrong */
+            temperature_thermocouple_c = 2.3482 * temperature_thermocouple_c - 47.426;
+
+            /* Discard abnormal values, because temperature readings:
+             * 1) are not accurate right after heating,
+             * 1) can be affected by electrically noisy environments */
+            if (temperature_thermocouple_c < 0 || temperature_thermocouple_c > 500) {
+                log_t("Read %4.0f invalid", temperature_thermocouple_c);
+                break;
+            }
+
+            /* Save the value we just read */
+            m_temperature_measured_c = temperature_thermocouple_c;
+            m_temperature_reported_c = temperature_thermocouple_c;
+            m_timestamp_temperature_read = millis();
+
+            /* Log */
+            log_t("Read %4.0f valid", temperature_thermocouple_c);
+
+            /* If heating is not enabled, restart a cycle */
+            if (m_heating_enabled != true) {
+                m_sm = STATE_2_DISABLED;
+                break;
+            }
+
+            /* Ask usb power negotiator how much power we are allowed to draw */
             res = power_negotiated_power_limit_get(&m_power_limit);
             if (res < 0) {
-                m_sm = STATE_0;
                 break;
             }
 
             /* Compute maximum amount of energy we can use this cycle */
-            float energy_limit = ((CONFIG_TIP_TIME_CYCLE_LIMIT - CONFIG_TIP_TIME_COOLDOWN) / 1000.0) * m_power_limit;  // 10.56 J
+            float energy_limit = ((CONFIG_TIP_TIME_CYCLE_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
 
-            /* Compute amount of energy needed this cycle */
+            /* Only enable integral term for small temperature differences
+             * This is because when first heating, the big difference in temperature will cause the integral sum to go high very quickly and it will take too long for it to go down */
+            if (fabs(m_temperature_target_c - m_temperature_measured_c) > 50) {
+                m_pid.SetTunings(0.93, 0, 0);
+            } else {
+                m_pid.SetTunings(0.93, 0.01, 0);
+            }
+
+            /* Compute amount of energy needed this cycle
+             * Note, we are constantly readjusting the sample time of the pid which is probably not ideal as it will lead to imprecision over time, but it's ok for now */
             m_pid_input = m_temperature_measured_c;
             m_pid_target = m_temperature_target_c;
-            m_pid.SetSampleTime((millis() - m_timestamp_last_cycle) - 1);
+            m_pid.SetMode(AUTOMATIC);
+            m_pid.SetSampleTime((millis() - m_timestamp_pid_computed) - 1);
             m_pid.SetOutputLimits(0, energy_limit);
             m_pid.Compute();
+            m_timestamp_pid_computed = millis();
 
             /* Convert back energy into time */
             m_heating_duration = 1000.0 * (m_pid_output / m_power_limit);
@@ -280,56 +322,50 @@ int element_task(void) {
             /* Log */
             log_t("Pid  %4.0f / %4.0f -> %5.2f J (%u ms)", m_pid_input, m_pid_target, m_pid_output, m_heating_duration);
 
-            /* */
+            /* If we don't need to heat, restart a cycle */
             if (m_heating_duration <= 0) {
-                m_timestamp_last_cycle = millis();
-                m_sm = STATE_0;
+                m_sm = STATE_3_START;
                 break;
             }
 
-/* Turn on dc-dc */
 #if R4J
+            /* Turn on dc-dc */
             digitalWrite(PC14, HIGH);
 #elif R8A
+            /* Turn on dc-dc */
             digitalWrite(3, HIGH);
 #endif
 
             /* Move on */
-            m_timestamp_last_cycle = millis();
-            m_timestamp = millis();
-            m_sm = STATE_2;
+            m_sm = STATE_5_HEAT;
             break;
         }
 
-        case STATE_2: {
+        case STATE_5_HEAT: {
+
+            /* Compute an estimate of the temperature while we are heating */
+            uint32_t time_ellapsed = millis() - m_timestamp_temperature_read;
+            const float m = 0.002;
+            const float c = 466;
+            float energy = m_power_limit * (time_ellapsed / 1000.0);
+            float temperature_increase = energy / (m * c);
+            m_temperature_reported_c = m_temperature_measured_c + temperature_increase;
 
             /* Wait for the end of the heating cycle */
-            if ((millis() - m_timestamp) < m_heating_duration) {
+            if ((millis() - m_timestamp_pid_computed) < m_heating_duration) {
                 break;
             }
 
-            /* Turn off dc-dc */
 #if R4J
+            /* Turn off dc-dc */
             digitalWrite(PC14, LOW);
 #elif R8A
+            /* Turn off dc-dc */
             digitalWrite(3, LOW);
 #endif
 
             /* Move on */
-            m_timestamp = millis();
-            m_sm = STATE_3;
-            break;
-        }
-
-        case STATE_3: {  // Wait after heating
-
-            /* Wait for the current to disappear in the tip before measuring again */
-            if ((millis() - m_timestamp) < CONFIG_TIP_TIME_COOLDOWN) {
-                break;
-            }
-
-            /* Move on */
-            m_sm = STATE_0;
+            m_sm = STATE_3_START;
             break;
         }
 
