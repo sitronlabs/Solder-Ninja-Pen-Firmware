@@ -21,6 +21,10 @@
 /* Peripherals */
 static max31855 m_thermocouple_afe;
 
+/* Filter library */
+static RunningMedian m_temperature_filter(10);
+static uint32_t m_temperature_filter_last_addition;
+
 /* PID library
  * As a base starting point for the coefficients, we can make the following approximation
  * For a mass of 2g of steel, a change of 1°C requires 0.93J
@@ -104,7 +108,8 @@ int element_temperature_measured_get(float &temperature_c) {
     }
 
     /* Return success */
-    temperature_c = m_temperature_reported_c;
+    // temperature_c = m_temperature_reported_c;
+    temperature_c = m_temperature_filter.getMedian();
     return 0;
 }
 
@@ -276,9 +281,11 @@ int element_task(void) {
             }
 
             /* Save the value we just read */
+            m_timestamp_temperature_read = millis();
             m_temperature_measured_c = temperature_thermocouple_c;
             m_temperature_reported_c = temperature_thermocouple_c;
-            m_timestamp_temperature_read = millis();
+            m_temperature_filter.add(m_temperature_measured_c);
+            m_temperature_filter_last_addition = millis();
 
             /* Log */
             log_t("Read %4.0f valid", temperature_thermocouple_c);
@@ -350,6 +357,12 @@ int element_task(void) {
             float energy = m_power_limit * (time_ellapsed / 1000.0);
             float temperature_increase = energy / (m * c);
             m_temperature_reported_c = m_temperature_measured_c + temperature_increase;
+
+            /* Add the value to the running filter */
+            if (millis() - m_temperature_filter_last_addition >= 100) {
+                m_temperature_filter.add(m_temperature_reported_c);
+                m_temperature_filter_last_addition = millis();
+            }
 
             /* Wait for the end of the heating cycle */
             if ((millis() - m_timestamp_pid_computed) < m_heating_duration) {
