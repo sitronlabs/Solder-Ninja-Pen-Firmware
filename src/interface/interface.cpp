@@ -195,9 +195,9 @@ int interface_task(void) {
             res = power_contract_get(&contract);
             if (res < 0) {
                 m_library.setCursor(11 * 6, 0);
-                m_library.printf("--.-V", 12.3);
+                m_library.print("--.-V");
                 m_library.setCursor(11 * 6, 9);
-                m_library.printf("-.-A", 2.5);
+                m_library.print("-.-A");
             } else {
                 m_library.setCursor(11 * 6, 0);
                 m_library.printf("%4.1fV", contract.voltage_max);
@@ -206,11 +206,13 @@ int interface_task(void) {
             }
             m_library.display();
 
-            /* Handle buttons */
+            /* Handle buttons
+             * A short press on both buttons will trigger a lock
+             * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_unlock(APP_LOCK_SOURCE_BUTTONS);
                     app_heating_turn_on();  // TODO Redundant, integrate into lock/unlock
+                    app_unlock(APP_LOCK_SOURCE_BUTTONS);
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
@@ -258,14 +260,14 @@ int interface_task(void) {
             res = power_contract_get(&contract);
             if (res < 0) {
                 m_library.setCursor(11 * 6, 0);
-                m_library.printf("%4.1fV", 12.3);
+                m_library.print("--.-V");
                 m_library.setCursor(11 * 6, 9);
-                m_library.printf("%3.1fA", 2.5);
+                m_library.print("-.-A");
             } else {
                 m_library.setCursor(11 * 6, 0);
-                m_library.printf("%4.1fV", 12.3);
+                m_library.printf("%4.1fV", contract.voltage_max);
                 m_library.setCursor(12 * 6, 9);
-                m_library.printf("%3.1fA", 2.5);
+                m_library.printf("%3.1fA", contract.current_max);
             }
             m_library.display();
 
