@@ -32,7 +32,7 @@ static uint32_t m_temperature_filter_last_addition;
 static double m_pid_input = 0;
 static double m_pid_target = 0;
 static double m_pid_output = 0;
-static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 0.93, 0.001, 0, P_ON_E, DIRECT);
+static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 0.93, 0, 0, P_ON_E, DIRECT);
 
 /* Other local variables */
 static float m_power_limit;
@@ -304,14 +304,6 @@ int element_task(void) {
 
             /* Compute maximum amount of energy we can use this cycle */
             float energy_limit = ((CONFIG_TIP_TIME_CYCLE_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
-
-            /* Only enable integral term for small temperature differences
-             * This is because when first heating, the big difference in temperature will cause the integral sum to go high very quickly and it will take too long for it to go down */
-            if (fabs(m_temperature_target_c - m_temperature_measured_c) > 50) {
-                m_pid.SetTunings(0.93, 0, 0);
-            } else {
-                m_pid.SetTunings(0.93, 0.01, 0);
-            }
 
             /* Compute amount of energy needed this cycle
              * Note, we are constantly readjusting the sample time of the pid which is probably not ideal as it will lead to imprecision over time, but it's ok for now */
