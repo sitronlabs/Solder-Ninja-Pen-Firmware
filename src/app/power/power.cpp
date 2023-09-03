@@ -637,6 +637,7 @@ int power_task(void) {
 
             /* Wait for D- pin to be pulled low by the source with a timeout */
             float pin_dn_voltage = (3.3 * analogRead(A3)) / 1023.0;
+            log_t("USB DN = %f", pin_dn_voltage);
             if (pin_dn_voltage > 0.2) {
                 if (millis() - m_timestamp > 3000) {
                     log_w("HVDCP handshake timed out.");
@@ -686,7 +687,14 @@ int power_task(void) {
             }
 
             /* Confirm vbus is now 12V */
-            // TODO
+            float vbus = 0;
+            m_fusb302.vbus_measure(vbus);
+            log_t("VBUS = %f", vbus);
+            if (fabs(12.0 - vbus) > 12.0 * 0.1) {
+                log_w("HVDCP Invalid voltage");
+                m_sm = STATE_QC_10;
+                break;
+            }
 
             /* Add power option */
             struct power_option option = {
