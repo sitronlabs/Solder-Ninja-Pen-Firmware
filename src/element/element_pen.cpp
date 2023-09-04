@@ -14,9 +14,9 @@
 
 /* Config */
 #include "../../cfg/config.h"
-#define CONFIG_TIP_TIME_COOLDOWN 10       //!< Amount of time, in milliseconds, to wait before measuring temperature.
-#define CONFIG_TIP_TIME_CYCLE_LIMIT 1000  //!< Maximum amount of time, in milliseconds, that a measuring plus heating cycle should take.
-#define ELEMENT_READINGS_CONSECUTIVE 10
+#define TIP_CYCLE_TIME_LIMIT 1000  //!< Maximum amount of time that a measuring plus heating cycle should take (in milliseconds).
+#define TIP_COEFFICIENT_C 466      //!< Specific heatt capacity of the heating element (in J / (kg * K)).
+#define TIP_COEFFICIENT_M 0.002    //!< Mass of the heating element (in kg).
 
 /* Peripherals */
 static max31855 m_thermocouple_afe;
@@ -32,12 +32,11 @@ static uint32_t m_temperature_filter_last_addition;
 static double m_pid_input = 0;
 static double m_pid_target = 0;
 static double m_pid_output = 0;
-static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, 0.93, 0, 0, P_ON_E, DIRECT);
+static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, TIP_COEFFICIENT_C *TIP_COEFFICIENT_M, 0, 0, P_ON_E, DIRECT);
 
 /* Other local variables */
 static float m_power_limit;
 static float m_temperature_measured_c;
-static float m_temperature_reported_c;
 static float m_temperature_target_c;
 static bool m_element_connected;
 static bool m_heating_enabled;
@@ -98,7 +97,6 @@ int element_connected_get(void) {
  *
  * @param[out] temperature_c
  * @return 0 in case of success, or a negative error code otherwise, in particular:
- * TODO
  */
 int element_temperature_measured_get(float &temperature_c) {
 
@@ -108,7 +106,6 @@ int element_temperature_measured_get(float &temperature_c) {
     }
 
     /* Return success */
-    // temperature_c = m_temperature_reported_c;
     temperature_c = m_temperature_filter.getMedian();
     return 0;
 }
@@ -283,7 +280,6 @@ int element_task(void) {
             /* Save the value we just read */
             m_timestamp_temperature_read = millis();
             m_temperature_measured_c = temperature_thermocouple_c;
-            m_temperature_reported_c = temperature_thermocouple_c;
             m_temperature_filter.add(m_temperature_measured_c);
             m_temperature_filter_last_addition = millis();
 
@@ -303,7 +299,7 @@ int element_task(void) {
             }
 
             /* Compute maximum amount of energy we can use this cycle */
-            float energy_limit = ((CONFIG_TIP_TIME_CYCLE_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
+            float energy_limit = ((TIP_CYCLE_TIME_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
 
             /* Compute amount of energy needed this cycle
              * Note, we are constantly readjusting the sample time of the pid which is probably not ideal as it will lead to imprecision over time, but it's ok for now */
@@ -344,15 +340,13 @@ int element_task(void) {
 
             /* Compute an estimate of the temperature while we are heating */
             uint32_t time_ellapsed = millis() - m_timestamp_temperature_read;
-            const float m = 0.002;
-            const float c = 466;
             float energy = m_power_limit * (time_ellapsed / 1000.0);
-            float temperature_increase = energy / (m * c);
-            m_temperature_reported_c = m_temperature_measured_c + temperature_increase;
+            float temperature_increase = energy / (TIP_COEFFICIENT_M * TIP_COEFFICIENT_C);
+            float temperature_estimate = m_temperature_measured_c + temperature_increase;
 
             /* Add the value to the running filter */
             if (millis() - m_temperature_filter_last_addition >= 100) {
-                m_temperature_filter.add(m_temperature_reported_c);
+                m_temperature_filter.add(temperature_estimate);
                 m_temperature_filter_last_addition = millis();
             }
 
