@@ -30,7 +30,7 @@ int magnet_detected_get(void) {
 #if R4J
     return (digitalRead(PA8) == HIGH) ? 1 : 0;
 #elif R8A
-    return (digitalRead(15) == HIGH) ? 1 : 0;
+    return (digitalRead(15) == LOW) ? 1 : 0;
 #else
     return 0;
 #endif

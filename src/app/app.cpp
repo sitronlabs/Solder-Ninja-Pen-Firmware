@@ -50,26 +50,43 @@ enum app_state app_state_get(void) {
 /**
  *
  */
-int app_sleep() {
-    return -1;
+int app_sleep(void) {
+
+    /* Transition to sleep state
+     * if we are heating */
+    if (m_state == APP_STATE_HEATING) {
+        element_heating_disable();
+        m_state = APP_STATE_ASLEEP;
+    }
+
+    /* Return success */
+    return 0;
 }
 
 /**
  *
  */
-int app_wake() {
-    return -1;
+int app_wake(void) {
+
+    /* Transition to heating state
+     * if and only if we were asleep */
+    if (m_state == APP_STATE_ASLEEP) {
+        element_temperature_target_set(m_target);
+        element_heating_enable();
+        m_state = APP_STATE_HEATING;
+    }
+
+    /* Return success */
+    return 0;
 }
 
 /**
  *
  */
-int app_lock(enum app_lock_source source) {
+int app_lock(void) {
 
-    /* Log */
-    log_d("Request to lock with source = %d", source);
-
-    /* Temp */
+    /* Transition to locked state */
+    element_heating_disable();
     m_state = APP_STATE_LOCKED;
 
     /* Return success */
@@ -79,12 +96,11 @@ int app_lock(enum app_lock_source source) {
 /**
  *
  */
-int app_unlock(enum app_lock_source source) {
+int app_unlock(void) {
 
-    /* Log */
-    log_d("Request to unlock with source = %d", source);
-
-    /* Temp */
+    /* Transition to heating state */
+    element_temperature_target_set(m_target);
+    element_heating_enable();
     m_state = APP_STATE_HEATING;
 
     /* Return success */
@@ -138,30 +154,25 @@ int app_target_decrease(void) {
     return 0;
 }
 
-int app_heating_turn_on(void) {
+// int app_heating_turn_on(void) {
+//     /* Pass along */
+//     element_temperature_target_set(m_target);
+//     element_heating_enable();
+//     /* Return success */
+//     return 0;
+// }
 
-    /* Pass along */
-    element_temperature_target_set(m_target);
-    element_heating_enable();
+// int app_heating_turn_off(void) {
+//     /* Pass along */
+//     element_heating_disable();
+//     /* Return success */
+//     return 0;
+// }
 
-    /* Return success */
-    return 0;
-}
-
-int app_heating_turn_off(void) {
-
-    /* Pass along */
-    element_heating_disable();
-
-    /* Return success */
-    return 0;
-}
-
-int app_heating_enabled_get(void) {
-
-    /* Return success */
-    return 0;
-}
+// int app_heating_enabled_get(void) {
+//     /* Return success */
+//     return 0;
+// }
 
 int app_task(void) {
 

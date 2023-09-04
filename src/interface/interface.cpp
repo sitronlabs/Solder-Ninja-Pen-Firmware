@@ -8,6 +8,7 @@
 #include "../log/log.h"
 #include "../settings/settings.h"
 #include "buttons.h"
+#include "magnet.h"
 
 /* Arduino libraries */
 #include <Arduino.h>
@@ -57,6 +58,13 @@ int interface_setup(void) {
         return -ERROR_GENERIC;
     }
 
+    /* Setup input: magnet sensor */
+    res = magnet_setup();
+    if (res < 0) {
+        log_e("Failed to setup magnet sensor!");
+        return -ERROR_GENERIC;
+    }
+
     /* Setup display library */
 #if R4J
     res = m_library.setup(Wire, 0x3C, PF1, m_buffer);
@@ -93,7 +101,39 @@ int interface_task(void) {
 
     /* Handle accelerometer */
 
-    /* State machine */
+    /* Handle input: magnet sensor */
+    static enum {
+        STATE_0_MAGNET_NOT_DETECTED,
+        STATE_1_MAGNET_DETECTED,
+    } m_magnet_sm;
+    switch (m_magnet_sm) {
+
+        case STATE_0_MAGNET_NOT_DETECTED: {
+
+            /* Wait for magnet to be detected */
+            if (magnet_detected_get() == true) {
+                if (app_state_get() == APP_STATE_HEATING) {
+                    app_sleep();
+                }
+                m_magnet_sm = STATE_1_MAGNET_DETECTED;
+            }
+            break;
+        }
+
+        case STATE_1_MAGNET_DETECTED: {
+
+            /* Wait for magnet to not be detected */
+            if (magnet_detected_get() == false) {
+                if (app_state_get() == APP_STATE_ASLEEP) {
+                    app_wake();
+                }
+                m_magnet_sm = STATE_0_MAGNET_NOT_DETECTED;
+            }
+            break;
+        }
+    }
+
+    /* Handle output: display */
     switch (m_sm) {
 
         case STATE_0_SPLASH: {
@@ -207,24 +247,20 @@ int interface_task(void) {
             m_library.display();
 
             /* Handle buttons
-             * A short press on both buttons will trigger a lock
+             * A short press on both buttons will trigger an unlock
              * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_heating_turn_on();  // TODO Redundant, integrate into lock/unlock
-                    app_unlock(APP_LOCK_SOURCE_BUTTONS);
+                    app_unlock();
+                    m_sm = STATE_2_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock(APP_LOCK_SOURCE_BUTTONS);
+                    app_lock();
                     m_sm = STATE_7_MENU;
                     break;
                 }
             }
-
-            /* Handle magnet */
-            // TODO
-            // Actually maybe magnet should be managed by app directly?
 
             /* That's it */
             break;
@@ -272,7 +308,7 @@ int interface_task(void) {
             m_library.display();
 
             /* Handle buttons
-             * Short and long presses on either buttons will adjust target temperature
+             * Short and long presses on either button will adjust target temperature
              * A short press on both buttons will trigger a lock
              * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
@@ -291,13 +327,12 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_heating_turn_off();  // TODO Redundant, integrate into lock/unlock
-                    app_lock(APP_LOCK_SOURCE_BUTTONS);
+                    app_lock();
+                    m_sm = STATE_2_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_heating_turn_off();  // TODO Redundant, integrate into lock/unlock
-                    app_lock(APP_LOCK_SOURCE_BUTTONS);
+                    app_lock();
                     m_sm = STATE_7_MENU;
                     break;
                 }
@@ -318,11 +353,38 @@ int interface_task(void) {
             /* Display monitor page */
             m_library.clear();
             m_library.drawBitmap(0, 0, m_icon_sleep, 16, 16, 1);
-            // TODO
+            m_library.setTextSize(2);
+            m_library.setCursor(17, 1);
+            if (element_connected_get()) {
+                float temperature_c = 0;
+                res = element_temperature_measured_get(temperature_c);
+                if (res < 0) {
+                    m_library.print("err");
+                } else {
+                    m_library.printf("%03.0f", temperature_c);                                // TODO Use settings to change units
+                    m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+                }
+            } else {
+                m_library.print("tip");
+            }
+            m_library.setTextSize(1);
+            struct power_option contract;
+            res = power_contract_get(&contract);
+            if (res < 0) {
+                m_library.setCursor(11 * 6, 0);
+                m_library.print("--.-V");
+                m_library.setCursor(11 * 6, 9);
+                m_library.print("-.-A");
+            } else {
+                m_library.setCursor(11 * 6, 0);
+                m_library.printf("%4.1fV", contract.voltage_max);
+                m_library.setCursor(12 * 6, 9);
+                m_library.printf("%3.1fA", contract.current_max);
+            }
             m_library.display();
 
             /* Handle buttons
-             * Short and long presses on either buttons will trigger a wake
+             * Short and long presses on either button will trigger a wake
              * A short press on both buttons will trigger a lock
              * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
@@ -331,19 +393,22 @@ int interface_task(void) {
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
                     app_wake();
+                    m_sm = STATE_2_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_lock(APP_LOCK_SOURCE_BUTTONS);  // APP_LOCK_INTERFACE_BUTTON
+                    app_lock();
                     m_sm = STATE_2_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock(APP_LOCK_SOURCE_BUTTONS);  // APP_LOCK_INTERFACE_BUTTON
+                    app_lock();
                     m_sm = STATE_7_MENU;
                     break;
                 }
             }
+
+            /* That's it */
             break;
         }
 
