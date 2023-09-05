@@ -6,9 +6,10 @@
 #define CONFIG_APP_TARGET_MAX 350  //!< Maximum target temperature in degrees celsius
 
 /* Buttons config */
-#define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30         //!<
-#define CONFIG_BUTTONS_PRESS_LONG_DURATION 500         //!<
-#define CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION 250  //!<
+#define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30                    //!<
+#define CONFIG_BUTTONS_PRESS_LONG_DURATION 500                    //!<
+#define CONFIG_BUTTONS_INDIVIDUAL_PRESS_LONG_REPEAT_DURATION 250  //!<
+#define CONFIG_BUTTONS_COMBINED_PRESS_LONG_REPEAT_DURATION 500    //!<
 
 /* Dislay config */
 #define CONFIG_DISPLAY_WIDTH 96   //!< Horizontal size of the display, in pixels.

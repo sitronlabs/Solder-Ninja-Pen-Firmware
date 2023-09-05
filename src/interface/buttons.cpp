@@ -101,7 +101,7 @@ int buttons_task(void) {
             uint32_t duration = millis() - m_buttons[0].timestamp;
 
             /* Handle long press */
-            if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
+            if (duration >= CONFIG_BUTTONS_INDIVIDUAL_PRESS_LONG_REPEAT_DURATION) {
                 m_event = BUTTONS_EVENT_LEFT_LONG;
                 m_buttons[0].timestamp = millis();
             } else if (m_buttons[0].pressed != true) {
@@ -157,7 +157,7 @@ int buttons_task(void) {
             uint32_t duration = millis() - m_buttons[2].timestamp;
 
             /* Handle long press */
-            if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
+            if (duration >= CONFIG_BUTTONS_INDIVIDUAL_PRESS_LONG_REPEAT_DURATION) {
                 m_event = BUTTONS_EVENT_RIGHT_LONG;
                 m_buttons[2].timestamp = millis();
             } else if (m_buttons[2].pressed != true) {
@@ -221,7 +221,7 @@ int buttons_task(void) {
             uint32_t duration = millis() - m_buttons[1].timestamp;
 
             /* Handle long press */
-            if (duration >= CONFIG_BUTTONS_PRESS_LONG_REPEAT_DURATION) {
+            if (duration >= CONFIG_BUTTONS_COMBINED_PRESS_LONG_REPEAT_DURATION) {
                 m_event = BUTTONS_EVENT_BOTH_LONG;
                 m_buttons[1].timestamp = millis();
             } else if (m_buttons[1].pressed != true) {
