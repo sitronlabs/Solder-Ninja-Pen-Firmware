@@ -184,15 +184,9 @@ int app_task(void) {
     /* Heating element task */
     element_task();
 
-    /* */
-    switch (m_sm) {
-            // Load settings
-            // interface_page_show(PAGE_SPLASH); Show splash screen
-            // wait
-            // interface_page_show(PAGE_MONITOR);
-        case STATE_0_SPLASH: {
-            break;
-        }
+    /* Lock if element has been disconnected */
+    if (element_connected_get() == false) {
+        app_lock();
     }
 
     /* Return success */
