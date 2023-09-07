@@ -298,6 +298,12 @@ int element_task(void) {
                 break;
             }
 
+            /* Ensure we have still time to heat in this cycle */
+            if ((millis() - m_timestamp_cycle_start) >= TIP_CYCLE_TIME_LIMIT) {
+                m_sm = STATE_3_START;
+                break;
+            }
+
             /* Compute maximum amount of energy we can use this cycle */
             float energy_limit = ((TIP_CYCLE_TIME_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
 
@@ -313,6 +319,9 @@ int element_task(void) {
 
             /* Convert back energy into time */
             m_heating_duration = 1000.0 * (m_pid_output / m_power_limit);
+            if (m_heating_duration > TIP_CYCLE_TIME_LIMIT) {
+                m_heating_duration = TIP_CYCLE_TIME_LIMIT;
+            }
 
             /* Log */
             log_t("Pid  %4.0f / %4.0f -> %5.2f J (%u ms)", m_pid_input, m_pid_target, m_pid_output, m_heating_duration);
