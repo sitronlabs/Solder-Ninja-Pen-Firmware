@@ -344,8 +344,8 @@ int power_task(void) {
             /* Measure voltages on the cc pins to determine
              * 1) the orientation of the usb type-c cable
              * 2) the current limit reported by the dfp */
-            enum fusb302_cc_voltage cc1, cc2;
-            res = m_fusb302.cc_measure(&cc1, &cc2);
+            enum usb_typec_cc_status cc1, cc2;
+            res = m_fusb302.cc_measure(cc1, cc2);
             if (res < 0) {
                 log_e("Failed to read cc voltages!");
                 m_sm = STATE_TC_0;
@@ -355,10 +355,10 @@ int power_task(void) {
 
             /* Detect orientation */
             fusb302_orientation orientation;
-            if (cc1 > FUSB302_CC_VOLTAGE_OPEN && cc2 == FUSB302_CC_VOLTAGE_OPEN) {
+            if (cc1 > USB_TYPEC_CC_STATUS_OPEN && cc2 == USB_TYPEC_CC_STATUS_OPEN) {
                 log_d("Type-C orientation is default.");
                 orientation = FUSB302_ORIENTATION_0;
-            } else if (cc1 == FUSB302_CC_VOLTAGE_OPEN && cc2 > FUSB302_CC_VOLTAGE_OPEN) {
+            } else if (cc1 == USB_TYPEC_CC_STATUS_OPEN && cc2 > USB_TYPEC_CC_STATUS_OPEN) {
                 log_d("Type-C orientation is flipped.");
                 orientation = FUSB302_ORIENTATION_1;
             } else {
@@ -369,7 +369,7 @@ int power_task(void) {
             }
 
             /* Set orientation */
-            res = m_fusb302.orientation_set(orientation);
+            res = m_fusb302.cc_orientation_set(orientation);
             if (res < 0) {
                 log_e("Failed to set orientation!");
                 m_sm = STATE_TC_0;
@@ -379,13 +379,13 @@ int power_task(void) {
 
             /* Determine current limit based on cc pin voltage */
             float current = 0.0;
-            if (cc1 == FUSB302_CC_VOLTAGE_SNK_3_0 || cc2 == FUSB302_CC_VOLTAGE_SNK_3_0) {
+            if (cc1 == USB_TYPEC_CC_STATUS_RP_3_0 || cc2 == USB_TYPEC_CC_STATUS_RP_3_0) {
                 log_i("Usb type-c src advertises 3.0A.");
                 current = 3.0;
-            } else if (cc1 == FUSB302_CC_VOLTAGE_SNK_1_5 || cc2 == FUSB302_CC_VOLTAGE_SNK_1_5) {
+            } else if (cc1 == USB_TYPEC_CC_STATUS_RP_1_5 || cc2 == USB_TYPEC_CC_STATUS_RP_1_5) {
                 log_i("Usb type-c src advertises 1.5A.");
                 current = 1.5;
-            } else if (cc1 == FUSB302_CC_VOLTAGE_SNK_0_5 || cc2 == FUSB302_CC_VOLTAGE_SNK_0_5) {
+            } else if (cc1 == USB_TYPEC_CC_STATUS_RP_DEF || cc2 == USB_TYPEC_CC_STATUS_RP_DEF) {
                 log_i("Usb type-c src advertises default current.");
                 current = 0.5;
             }
