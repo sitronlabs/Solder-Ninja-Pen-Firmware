@@ -277,6 +277,11 @@ int element_task(void) {
                 break;
             }
 
+            // /* If needed, compute the dtemperature/denergy to replace the default one */
+            // if (m_dt_de_available == false ) {
+            // TODO
+            // }
+
             /* Save the value we just read */
             m_timestamp_temperature_read = millis();
             m_temperature_measured_c = temperature_thermocouple_c;
