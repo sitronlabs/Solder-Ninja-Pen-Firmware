@@ -259,7 +259,11 @@ int power_task(void) {
     static uint8_t m_errors_tc;
     static uint8_t m_errors_bc;
     static uint8_t m_errors_qc;
+    static uint8_t m_errors_pd;
     static bool m_dcp_detected;
+    static uint8_t m_pd_next_message_id;
+    static double m_pd_voltage;
+    static double m_pd_current;
     static uint32_t m_timestamp;
     static enum {
         STATE_IDLE,
@@ -273,6 +277,11 @@ int power_task(void) {
         STATE_BC_4,
         STATE_BC_5,
         STATE_PD_0,
+        STATE_PD_1,
+        STATE_PD_2,
+        STATE_PD_3,
+        STATE_PD_4,
+        STATE_PD_5,
         STATE_QC_0,
         STATE_QC_1,
         STATE_QC_2,
@@ -290,6 +299,7 @@ int power_task(void) {
             m_errors_tc = 0;
             m_errors_bc = 0;
             m_errors_qc = 0;
+            m_errors_pd = 0;
             m_dcp_detected = false;
 
             /* Clear list of options */
@@ -562,8 +572,290 @@ int power_task(void) {
 
         case STATE_PD_0: {
 
-            /* Skip for now */
-            m_sm = STATE_QC_0;
+            /* Don't retry too many times */
+            if (m_errors_pd > 5) {
+                log_e("Too many errors!");
+                m_sm = STATE_QC_0;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_PD_1;
+            break;
+        }
+
+        case STATE_PD_1: {
+
+            /* Flush rx */
+            res = m_fusb302.pd_rx_flush();
+            if (res < 0) {
+                log_e("Failed to flush rx fifo!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Enable automatic goodcrc
+             * @note Don't log starting from here as it might delay pd messages */
+            res = m_fusb302.autogoodcrc_enable(true);
+            if (res < 0) {
+                log_e("Failed to enable auto goodcrc!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            // TODO AUTO_RETRY
+
+            // /* Try to receive power delivery source capabilities
+            //  * @note Don't log starting from here as it might delay pd messages */
+            // static struct usb_pd_pdo pdo[7];
+            // res = usb_pd_source_capabilities_list(0, &pdo[0], sizeof(pdo) / sizeof(struct usb_pd_pdo));
+            // if (res < 0) {
+            //     log_e("Failed to retrieve power delivery source capabilities!");
+            //     m_sm = STATE_ERROR;
+            //     break;
+            // }
+
+            // TODO
+            // TODO Set data role and power role
+
+            // TODO Maybe clear m_pd_xxx variables
+            // TODO Maybe clear pd related power options
+
+            /* Move on */
+            m_sm = STATE_PD_2;
+            break;
+        }
+
+        case STATE_PD_2: {
+
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 0) {
+                break;
+            }
+
+            /* Log */
+            // log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            // for (unsigned int i = 0; i < response.object_count; i++) {
+            //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
+            // }
+
+            /* Whatever the message, increment the message_id counter */
+            m_pd_next_message_id = (response.header >> 9) & 0b111;
+            m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+
+            /* Wait for source capabilities message */
+            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
+
+                /* Parse each pdo */
+                double power_best = 0;
+                int8_t power_best_index = -1;
+                for (uint8_t i = 0; i < response.object_count; i++) {
+                    switch (response.objects[i] >> 30U) {
+
+                        case USB_PD_PDO_TYPE_FIXED: {
+                            double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
+                            double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
+                            // log_d("Received fixed pdo %.fV %.fA", voltage, current);
+                            double power = voltage * current;
+                            if (power >= power_best) {
+                                power_best = power;
+                                power_best_index = i;
+                                m_pd_current = current;
+                                m_pd_voltage = voltage;
+                            }
+                            break;
+                        }
+
+                        default: {
+                            // log_w("Received unsupported pdo.");
+                            break;
+                        }
+                    }
+                }
+
+                /* Request the most interesting pdo */
+                if (power_best_index >= 0) {
+
+                    /* Build message */
+                    struct usb_pd_message request = {0};
+                    request.address = 0;  // ?
+                    request.header = 0;
+                    request.header |= (m_pd_next_message_id & 0b111) << 9;
+                    request.header |= (USB_PD_PROTOCOL_REVISION_3_0 << 6);
+                    request.header |= USB_PD_MESSAGE_TYPE_DATA_REQUEST;
+                    uint16_t current_10ma = m_pd_current * 100;
+                    request.object_count = 1;
+                    request.objects[0] = 0;
+                    request.objects[0] |= ((power_best_index + 1) << 28);
+                    request.objects[0] |= (1 << 25);  // USB Communications Capable
+                    request.objects[0] |= (1 << 24);  // No USB Suspend
+                    request.objects[0] |= (current_10ma << 10);
+                    request.objects[0] |= (current_10ma << 0);
+
+                    /* Log */
+                    // log_d("Requesting pdo at index %u", power_best_index);
+
+                    /* Send message */
+                    res = m_fusb302.pd_message_send(request);
+                    if (res < 0) {
+                        log_e("Failed to request pdo!");
+                        m_sm = STATE_PD_0;
+                        m_errors_pd++;
+                        break;
+                    }
+
+                    /* Move on */
+                    m_timestamp = millis();
+                    m_sm = STATE_PD_3;
+                    break;
+                }
+            }
+
+            /* Otherwise stay in this state
+             * @note This is not ideal
+             * @todo Move to a separate state machine maybe or implement timeout? */
+            break;
+        }
+
+        case STATE_PD_3: {
+
+            /* Watch for timeout
+             * @see Section 6.6.2
+             * @see tReceiverResponse = 15 ms
+             * @todo Revert to 15ms? */
+            if ((millis() - m_timestamp) >= 115) {
+                log_e("No response received!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 0) {
+                break;
+            }
+
+            // /* Log */
+            // log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            // for (unsigned int i = 0; i < response.object_count; i++) {
+            //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
+            // }
+
+            /* Whatever the message, increment the message_id counter */
+            m_pd_next_message_id = (response.header >> 9) & 0b111;
+            m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+
+            /* Handle accept message */
+            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT) {
+                log_i("Pdo request accepted.");
+
+                /* Move on */
+                m_timestamp = millis();
+                m_sm = STATE_PD_4;
+                break;
+            }
+
+            /* Handle reject message */
+            else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_REJECT) {
+                log_e("Pdo request rejected.");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Handle other messages */
+            else {
+                log_w("Unexpected message.");
+            }
+
+            /* Otherwise stay in this state */
+            break;
+        }
+
+        case STATE_PD_4: {
+
+            /* Watch for timeout
+             * @see Section 6.6.5.1
+             * @see tPSTransition = 450 to 550 ms */
+            if ((millis() - m_timestamp) >= 650) {
+                log_e("No response received.");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 0) {
+                break;
+            }
+
+            // /* Log */
+            // log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            // for (unsigned int i = 0; i < response.object_count; i++) {
+            //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
+            // }
+
+            /* Whatever the message, increment the message_id counter */
+            m_pd_next_message_id = (response.header >> 9) & 0b111;
+            m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+
+            /* Handle ready message */
+            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
+
+                /* Log */
+                log_d("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
+
+                /* Add power option */
+                struct power_option option = {
+                    .provider = POWER_PROVIDER_USB_PD,
+                    .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                    .voltage_min = m_pd_voltage,
+                    .voltage_max = m_pd_voltage,
+                    .current_max = m_pd_current,
+                };
+                m_options_add(option);
+
+                /* Move on */
+                m_sm = STATE_PD_5;
+                break;
+            }
+
+            /* Handle other messages */
+            else {
+                log_w("Unexpected message.");
+            }
+
+            /* Otherwise stay in this state */
+            break;
+        }
+
+        case STATE_PD_5: {
+
+            /* Move on */
+            m_sm = STATE_DONE;
             break;
         }
 
