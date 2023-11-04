@@ -256,8 +256,8 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock();
-                    m_sm = STATE_7_MENU;
+                    // app_lock();
+                    // m_sm = STATE_7_MENU;
                     break;
                 }
             }
@@ -332,8 +332,8 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock();
-                    m_sm = STATE_7_MENU;
+                    // app_lock();
+                    // m_sm = STATE_7_MENU;
                     break;
                 }
             }
@@ -402,8 +402,8 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock();
-                    m_sm = STATE_7_MENU;
+                    // app_lock();
+                    // m_sm = STATE_7_MENU;
                     break;
                 }
             }
