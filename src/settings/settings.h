@@ -4,10 +4,13 @@
 /* Project */
 #include "../errors/errors.h"
 
-/**
- * @return 1 in case of success, 0 if the settings have not been fully loaded yet, or a negative error code otherwise, in particular:
- *  -ERROR_I2C_COMMUNICATION
- */
-int settings_loaded(void);
+/* C/C++ libraries */
+#include <stddef.h>
+#include <stdint.h>
+
+/* */
+int settings_setup(void);
+int settings_memory_read(const size_t address, uint8_t *const data, const size_t length);
+int settings_memory_wipe(void);
 
 #endif

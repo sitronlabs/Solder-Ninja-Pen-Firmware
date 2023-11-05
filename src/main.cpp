@@ -3,6 +3,7 @@
 #include "com/com.h"
 #include "interface/interface.h"
 #include "log/log.h"
+#include "settings/settings.h"
 
 /* Arduino libraries */
 #include <Arduino.h>
@@ -39,6 +40,12 @@ void setup(void) {
     res = log_setup();
     if (res < 0) {
         log_e("Failed to setup log task!");
+    }
+
+    /* Setup settings */
+    res = settings_setup();
+    if (res < 0) {
+        log_e("Failed to setup settings!");
     }
 
     /* Setup application */
