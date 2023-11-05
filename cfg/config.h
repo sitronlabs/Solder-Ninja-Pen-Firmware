@@ -20,5 +20,6 @@
 
 /* User interface config */
 #define CONFIG_UI_SPLASH_DURATION 1000  //!< Duration of the splash screen, in milliseconds.
+#define CONFIG_UI_INFO_DURATION 1500    //!< Duration of each information screen, in milliseconds.
 
 #endif

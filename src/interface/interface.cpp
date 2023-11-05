@@ -200,7 +200,7 @@ int interface_task(void) {
         case STATE_INFO_1: {
 
             /* Wait for timeout */
-            if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {
+            if ((millis() - m_timestamp) < CONFIG_UI_INFO_DURATION) {
                 break;
             }
 
@@ -240,7 +240,7 @@ int interface_task(void) {
         case STATE_INFO_3: {
 
             /* Wait for timeout */
-            if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {
+            if ((millis() - m_timestamp) < CONFIG_UI_INFO_DURATION) {
                 break;
             }
 
