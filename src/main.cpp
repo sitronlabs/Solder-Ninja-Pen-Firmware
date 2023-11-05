@@ -1,5 +1,6 @@
 /* Project */
 #include "app/app.h"
+#include "com/com.h"
 #include "interface/interface.h"
 #include "log/log.h"
 
@@ -37,16 +38,25 @@ void setup(void) {
     /* Setup log */
     res = log_setup();
     if (res < 0) {
+        log_e("Failed to setup log task!");
     }
 
     /* Setup application */
     res = app_setup();
     if (res < 0) {
+        log_e("Failed to setup application task!");
     }
 
     /* Setup user interface  */
     res = interface_setup();
     if (res < 0) {
+        log_e("Failed to setup interface task!");
+    }
+
+    /* Setup communication */
+    res = com_setup();
+    if (res < 0) {
+        log_e("Failed to setup communication task!");
     }
 }
 
@@ -60,4 +70,7 @@ void loop(void) {
 
     /* User interface task */
     interface_task();
+
+    /* Communication task */
+    com_task();
 }

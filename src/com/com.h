@@ -1,15 +1,13 @@
 #ifndef COM_H
 #define COM_H
 
-/**
- * Hardware version get
- * Firmware version get
- * Settings get all
- * Settings set
- * App_heating_turn_on
- * app.lock -> app_lock(COM);
- * app.unlock -> app_unlock(COM);
- */
+/* C/C++ libraries */
+#include <stddef.h>
+#include <stdint.h>
+
+/* Prototypes */
+int com_setup(void);
+int com_command_process(const char* const str, const size_t len);
 int com_task(void);
 
 #endif
