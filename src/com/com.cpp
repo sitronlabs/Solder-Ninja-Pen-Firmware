@@ -92,6 +92,51 @@ int com_command_process(const char *const str, const size_t len) {
         }
     }
 
+    /* Command to retrieve the product and serial numbers */
+    else if (doc[F("action")] == F("product_information_get")) {
+
+        /* Retrieve product information if available */
+        char product_number[12 + 1];
+        char serial_number[12 + 1];
+        res = settings_product_get(product_number, serial_number);  // TODO Change to prevent overflow
+        if (res == 1) {
+            StaticJsonDocument<128> response;
+            response["result"] = "success";
+            response["product_number"] = product_number;
+            response["serial_number"] = serial_number;
+            serializeJson(response, Serial);
+            Serial.println();
+        } else {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"No product information!\"]}"));
+        }
+    }
+
+    /* Command to set the product and serial numbers */
+    else if (doc[F("action")] == F("product_information_set")) {
+
+        /* Retrieve and verify arugments */
+        const char *product_number = doc["product_number"];
+        const char *serial_number = doc["serial_number"];
+        if (strlen(product_number) <= 0 || strlen(product_number) > 12) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid product number!\"]}"));
+            return 0;
+        }
+        if (strlen(serial_number) <= 0 || strlen(serial_number) > 12) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid serial number!\"]}"));
+            return 0;
+        }
+
+        /* Save */
+        res = settings_product_set(product_number, serial_number);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to save settings!\"]}"));
+            return 0;
+        }
+
+        /* Report success */
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
     /* Command to retrieve the user information */
     else if (doc[F("action")] == F("user_information_get")) {
 

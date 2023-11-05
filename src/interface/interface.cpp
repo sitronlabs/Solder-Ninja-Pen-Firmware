@@ -28,6 +28,8 @@ static enum {
     STATE_SPLASH_1,
     STATE_INFO_0,
     STATE_INFO_1,
+    STATE_INFO_2,
+    STATE_INFO_3,
     STATE_USER_0,
     STATE_USER_1,
     STATE_MONITOR_REDIRECT,
@@ -179,7 +181,7 @@ int interface_task(void) {
                 break;
             }
 
-            /* Display splash page */
+            /* Display version info */
             m_library.clear();
             m_library.drawBitmap(0, 0, m_icon_ninja, 16, 16, 1);
             m_library.setTextSize(1);
@@ -203,14 +205,54 @@ int interface_task(void) {
             }
 
             /* Move on */
+            m_sm = STATE_INFO_2;
+            break;
+        }
+
+        case STATE_INFO_2: {
+
+            /* Retrieve product information,
+             * Or skip if not avaiable */
+            char product_number[12 + 1];
+            char serial_number[12 + 1];
+            res = settings_product_get(product_number, serial_number);  // TODO Change to prevent overflow
+            if (res != 1) {
+                m_sm = STATE_USER_0;
+                break;
+            }
+
+            /* Display product info */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_ninja, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.printf(product_number);
+            m_library.setCursor(20, 9);
+            m_library.print(serial_number);
+            m_library.display();
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_INFO_3;
+            break;
+        }
+
+        case STATE_INFO_3: {
+
+            /* Wait for timeout */
+            if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {
+                break;
+            }
+
+            /* Move on */
             m_sm = STATE_USER_0;
             break;
         }
 
         case STATE_USER_0: {
 
-            /* Retrieve user information if available,
-             * if not, skip */
+            /* Retrieve user information,
+             * Or skip if not avaiable */
             uint8_t icon[32];
             char text_line1[12 + 1];
             char text_line2[12 + 1];

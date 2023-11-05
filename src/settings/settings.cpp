@@ -224,3 +224,63 @@ int settings_user_set(const uint8_t icon[32], const char *line1, const char *lin
     /* Return success */
     return 0;
 }
+
+/**
+ * @brief
+ * @param product_number
+ * @param serial_number
+ * @return
+ */
+int settings_product_get(char *const product_number, char *const serial_number) {
+    int res;
+
+    /* Load json document */
+    res = m_unpack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* */
+    const char *pn = m_doc["product"]["product_number"];
+    const char *sn = m_doc["product"]["serial_number"];
+    if ((m_doc["product"].containsKey("product_number") != true || strlen(pn) < 0 || strlen(pn) > 12) ||  //
+        (m_doc["product"].containsKey("serial_number") != true || strlen(sn) < 0 || strlen(sn) > 12)) {
+        return 0;
+    }
+    strncpy(product_number, pn, 13);
+    strncpy(serial_number, sn, 13);
+    product_number[12] = 0;
+    serial_number[12] = 0;
+
+    /* Return found */
+    return 1;
+}
+
+/**
+ * @brief
+ * @param product_number
+ * @param serial_number
+ * @return
+ */
+int settings_product_set(const char *const product_number, const char *const serial_number) {
+    int res;
+
+    /* */
+    if ((strlen(product_number) < 0 || strlen(product_number) > 12) ||  //
+        (strlen(serial_number) < 0 || strlen(serial_number) > 12)) {
+        return -EINVAL;
+    }
+
+    /* */
+    m_doc["product"]["product_number"] = product_number;
+    m_doc["product"]["serial_number"] = serial_number;
+
+    /* Save it */
+    res = m_repack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return success */
+    return 0;
+}
