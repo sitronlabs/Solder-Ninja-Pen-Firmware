@@ -2,6 +2,7 @@
 #include "interface.h"
 
 /* Project */
+#include "../../gen/version.h"
 #include "../app/app.h"
 #include "../app/power/power.h"
 #include "../element/element.h"
@@ -23,14 +24,16 @@ static ssd1306 m_library(96, 16);
 static uint8_t m_buffer[96 * 16 / 8];
 static uint32_t m_timestamp;
 static enum {
-    STATE_0_SPLASH,
-    STATE_1_SPLASH,
-    STATE_2_MONITOR_REDIRECT,
-    STATE_3_MONITOR_LOCKED,
-    STATE_4_MONITOR_HEATING,
-    STATE_5_MONITOR_ASLEEP,
-    STATE_6_MONITOR_ADJUST,
-    STATE_7_MENU,
+    STATE_SPLASH_0,
+    STATE_SPLASH_1,
+    STATE_INFO_0,
+    STATE_INFO_1,
+    STATE_MONITOR_REDIRECT,
+    STATE_MONITOR_LOCKED,
+    STATE_MONITOR_HEATING,
+    STATE_MONITOR_ASLEEP,
+    STATE_MONITOR_ADJUST,
+    STATE_MENU,
 } m_sm;
 
 /* Icon bitmaps */
@@ -136,7 +139,7 @@ int interface_task(void) {
     /* Handle output: display */
     switch (m_sm) {
 
-        case STATE_0_SPLASH: {
+        case STATE_SPLASH_0: {
 
             // /* Wait for settings to have loaded */
             // res = settings_loaded();
@@ -161,11 +164,47 @@ int interface_task(void) {
 
             /* Move on */
             m_timestamp = millis();
-            m_sm = STATE_1_SPLASH;
+            m_sm = STATE_SPLASH_1;
             break;
         }
 
-        case STATE_1_SPLASH: {
+        case STATE_SPLASH_1: {
+
+            /* Wait for timeout */
+            if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {
+                break;
+            }
+
+            /* Only show version and product information if user pressed a button */
+            if (buttons_event_get() != BUTTONS_EVENT_NONE) {
+                m_sm = STATE_INFO_0;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_MONITOR_REDIRECT;
+            break;
+        }
+
+        case STATE_INFO_0: {
+
+            /* Display splash page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_ninja, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.printf("v%u.%u.%u", version_major, version_minor, version_patch);
+            m_library.setCursor(20, 9);
+            m_library.print(version_commit);
+            m_library.display();
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_INFO_1;
+            break;
+        }
+
+        case STATE_INFO_1: {
 
             /* Wait for timeout */
             if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {
@@ -173,43 +212,43 @@ int interface_task(void) {
             }
 
             /* Move on */
-            m_sm = STATE_2_MONITOR_REDIRECT;
+            m_sm = STATE_MONITOR_REDIRECT;
             break;
         }
 
-        case STATE_2_MONITOR_REDIRECT: {
+        case STATE_MONITOR_REDIRECT: {
 
             /* Move on according to app state */
             switch (app_state_get()) {
                 case APP_STATE_LOCKED: {
-                    log_d("Redirect to STATE_3_MONITOR_LOCKED");
-                    m_sm = STATE_3_MONITOR_LOCKED;
+                    log_d("Redirect to STATE_MONITOR_LOCKED");
+                    m_sm = STATE_MONITOR_LOCKED;
                     break;
                 }
                 case APP_STATE_HEATING: {
-                    log_d("Redirect to STATE_4_MONITOR_HEATING");
-                    m_sm = STATE_4_MONITOR_HEATING;
+                    log_d("Redirect to STATE_MONITOR_HEATING");
+                    m_sm = STATE_MONITOR_HEATING;
                     break;
                 }
                 case APP_STATE_ASLEEP: {
-                    log_d("Redirect to STATE_5_MONITOR_ASLEEP");
-                    m_sm = STATE_5_MONITOR_ASLEEP;
+                    log_d("Redirect to STATE_MONITOR_ASLEEP");
+                    m_sm = STATE_MONITOR_ASLEEP;
                     break;
                 }
                 default: {
                     log_e("Unexpected state!");
-                    m_sm = STATE_0_SPLASH;
+                    m_sm = STATE_SPLASH_0;
                     return -ERROR_STATE_UNEXPECTED;
                 }
             }
             break;
         }
 
-        case STATE_3_MONITOR_LOCKED: {
+        case STATE_MONITOR_LOCKED: {
 
             /* Ensure app state is still coherent */
             if (app_state_get() != APP_STATE_LOCKED) {
-                m_sm = STATE_2_MONITOR_REDIRECT;
+                m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
 
@@ -252,12 +291,12 @@ int interface_task(void) {
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_SHORT: {
                     app_unlock();
-                    m_sm = STATE_2_MONITOR_REDIRECT;
+                    m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     // app_lock();
-                    // m_sm = STATE_7_MENU;
+                    // m_sm = STATE_MENU;
                     break;
                 }
             }
@@ -266,11 +305,11 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_4_MONITOR_HEATING: {
+        case STATE_MONITOR_HEATING: {
 
             /* Ensure app state is still coherent */
             if (app_state_get() != APP_STATE_HEATING) {
-                m_sm = STATE_2_MONITOR_REDIRECT;
+                m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
 
@@ -316,24 +355,24 @@ int interface_task(void) {
                 case BUTTONS_EVENT_LEFT_LONG: {
                     app_target_decrease();
                     m_timestamp = millis();
-                    m_sm = STATE_6_MONITOR_ADJUST;
+                    m_sm = STATE_MONITOR_ADJUST;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
                     app_target_increase();
                     m_timestamp = millis();
-                    m_sm = STATE_6_MONITOR_ADJUST;
+                    m_sm = STATE_MONITOR_ADJUST;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
                     app_lock();
-                    m_sm = STATE_2_MONITOR_REDIRECT;
+                    m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     // app_lock();
-                    // m_sm = STATE_7_MENU;
+                    // m_sm = STATE_MENU;
                     break;
                 }
             }
@@ -342,11 +381,11 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_5_MONITOR_ASLEEP: {
+        case STATE_MONITOR_ASLEEP: {
 
             /* Ensure app state is still coherent */
             if (app_state_get() != APP_STATE_ASLEEP) {
-                m_sm = STATE_2_MONITOR_REDIRECT;
+                m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
 
@@ -393,17 +432,17 @@ int interface_task(void) {
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
                     app_wake();
-                    m_sm = STATE_2_MONITOR_REDIRECT;
+                    m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
                     app_lock();
-                    m_sm = STATE_2_MONITOR_REDIRECT;
+                    m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     // app_lock();
-                    // m_sm = STATE_7_MENU;
+                    // m_sm = STATE_MENU;
                     break;
                 }
             }
@@ -412,11 +451,11 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_6_MONITOR_ADJUST: {
+        case STATE_MONITOR_ADJUST: {
 
             /* Revert after timeout */
             if ((millis() - m_timestamp) >= 1000) {  // TODO Change by a config value
-                m_sm = STATE_2_MONITOR_REDIRECT;
+                m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
 
@@ -449,7 +488,7 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_7_MENU: {
+        case STATE_MENU: {
 
             /* Display menu page */
             m_library.clear();
@@ -459,7 +498,7 @@ int interface_task(void) {
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    m_sm = STATE_2_MONITOR_REDIRECT;
+                    m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
             }
@@ -470,7 +509,7 @@ int interface_task(void) {
 
         default: {
             log_e("Unexpected state!");
-            m_sm = STATE_0_SPLASH;
+            m_sm = STATE_SPLASH_0;
             return -ERROR_STATE_UNEXPECTED;
         }
     }

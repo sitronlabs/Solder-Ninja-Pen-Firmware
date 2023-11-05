@@ -2,6 +2,7 @@
 #include "com.h"
 
 /* Project */
+#include "../../gen/version.h"
 #include "../app/app.h"
 #include "../cfg/config.h"
 #include "../log/log.h"
@@ -43,8 +44,13 @@ int com_command_process(const char *const str, const size_t len) {
         return -1;
     }
 
-    /* TODO */
-    if (0) {
+    /* Command to retrieve the firmware version */
+    if (doc[F("action")] == F("firmware_version_get")) {
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["firmware_version"] = version_string;
+        serializeJson(response, Serial);
+        Serial.println();
     }
 
     /* Unknown command */
