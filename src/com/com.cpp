@@ -37,10 +37,11 @@ int com_command_process(const char *const str, const size_t len) {
     int res;
 
     /* Parse json */
-    static StaticJsonDocument<CONFIG_COMMAND_LENGTH_LIMIT> doc;
+    static StaticJsonDocument<4 * CONFIG_COMMAND_LENGTH_LIMIT> doc;
     DeserializationError json_res = deserializeJson(doc, str, len);
     if (json_res != DeserializationError::Ok) {
-        log_e("Failed to parse command json!");
+        Serial.println("{\"result\":\"failure\", \"errors\" : [\"Failed to parse command!\"]}");
+        log_e("Failed to parse command json (%d)!", json_res.code());
         return -1;
     }
 
@@ -89,6 +90,68 @@ int com_command_process(const char *const str, const size_t len) {
         } else {
             Serial.println("{\"result\":\"failure\", \"errors\" : [\"Unknown error!\"]}");
         }
+    }
+
+    /* Command to retrieve the user information */
+    else if (doc[F("action")] == F("user_information_get")) {
+
+        /* Retrieve user information if available */
+        uint8_t icon[32];
+        char text_line1[12 + 1];
+        char text_line2[12 + 1];
+        res = settings_user_get(icon, text_line1, text_line2);  // TODO Change to prevent overflow
+        if (res == 1) {
+            StaticJsonDocument<1024> response;
+            response["result"] = "success";
+            for (size_t i = 0; i < 32; i++) {
+                response["user"]["icon"][i] = icon[i];
+            }
+            response["user"]["name"][0] = text_line1;
+            response["user"]["name"][1] = text_line2;
+            serializeJson(response, Serial);
+            Serial.println();
+        } else {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"No user information!\"]}"));
+        }
+    }
+
+    /* Command to set the user information */
+    else if (doc[F("action")] == F("user_information_set")) {
+
+        /* Handle icon */
+        size_t icon_size = doc["icon"].size();
+        if (icon_size != 32) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid icon size!\"]}"));
+            return 0;
+        }
+        uint8_t icon[32];
+        for (size_t i = 0; i < icon_size; i++) {
+            icon[i] = doc["icon"][i];
+            log_t("icon[%u] = 0x%02X", i, icon[i]);
+        }
+
+        /* Handle name */
+        const char *line1 = doc["name"][0];
+        const char *line2 = doc["name"][1];
+        if ((strlen(line1) <= 0) ||  //
+            (strlen(line2) <= 0)) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Name too short!\"]}"));
+            return 0;
+        } else if ((strlen(line1) > 12) ||  //
+                   (strlen(line2) > 12)) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Name too long!\"]}"));
+            return 0;
+        }
+
+        /* Save */
+        res = settings_user_set(icon, line1, line2);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to save settings!\"]}"));
+            return 0;
+        }
+
+        /* Report success */
+        Serial.println(F("{\"result\":\"success\"}"));
     }
 
     /* Unknown command */

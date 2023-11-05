@@ -16,7 +16,7 @@
 #define CONFIG_DISPLAY_HEIGHT 16  //!< Vertical size of the display, in pixels.
 
 /* Orders config */
-#define CONFIG_COMMAND_LENGTH_LIMIT 128  //!<
+#define CONFIG_COMMAND_LENGTH_LIMIT 256  //!<
 
 /* User interface config */
 #define CONFIG_UI_SPLASH_DURATION 1000  //!< Duration of the splash screen, in milliseconds.

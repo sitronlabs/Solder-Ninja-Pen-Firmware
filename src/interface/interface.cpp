@@ -28,6 +28,8 @@ static enum {
     STATE_SPLASH_1,
     STATE_INFO_0,
     STATE_INFO_1,
+    STATE_USER_0,
+    STATE_USER_1,
     STATE_MONITOR_REDIRECT,
     STATE_MONITOR_LOCKED,
     STATE_MONITOR_HEATING,
@@ -141,25 +143,14 @@ int interface_task(void) {
 
         case STATE_SPLASH_0: {
 
-            // /* Wait for settings to have loaded */
-            // res = settings_loaded();
-            // if (res == 0) {
-            //     break;
-            // }
-
-            /* Use settings to customize splash page */
-            const uint8_t* icon = m_icon_ninja;  // TODO
-            const char* text_line1 = "Solder";   // TODO
-            const char* text_line2 = "Ninja";    // TODO
-
             /* Display splash page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, icon, 16, 16, 1);
+            m_library.drawBitmap(0, 0, m_icon_ninja, 16, 16, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
-            m_library.print(text_line1);
+            m_library.print("Solder");
             m_library.setCursor(20, 9);
-            m_library.print(text_line2);
+            m_library.print("Ninja");
             m_library.display();
 
             /* Move on */
@@ -175,18 +166,18 @@ int interface_task(void) {
                 break;
             }
 
-            /* Only show version and product information if user pressed a button */
-            if (buttons_event_get() != BUTTONS_EVENT_NONE) {
-                m_sm = STATE_INFO_0;
-                break;
-            }
-
             /* Move on */
-            m_sm = STATE_MONITOR_REDIRECT;
+            m_sm = STATE_INFO_0;
             break;
         }
 
         case STATE_INFO_0: {
+
+            /* Only show version and product information if user pressed a button */
+            if (buttons_event_get() == BUTTONS_EVENT_NONE) {
+                m_sm = STATE_USER_0;
+                break;
+            }
 
             /* Display splash page */
             m_library.clear();
@@ -205,6 +196,47 @@ int interface_task(void) {
         }
 
         case STATE_INFO_1: {
+
+            /* Wait for timeout */
+            if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_USER_0;
+            break;
+        }
+
+        case STATE_USER_0: {
+
+            /* Retrieve user information if available,
+             * if not, skip */
+            uint8_t icon[32];
+            char text_line1[12 + 1];
+            char text_line2[12 + 1];
+            res = settings_user_get(icon, text_line1, text_line2);  // TODO Change to prevent overflow
+            if (res != 1) {
+                m_sm = STATE_MONITOR_REDIRECT;
+                break;
+            }
+
+            /* Display user info page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, icon, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print(text_line1);
+            m_library.setCursor(20, 9);
+            m_library.print(text_line2);
+            m_library.display();
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_USER_1;
+            break;
+        }
+
+        case STATE_USER_1: {
 
             /* Wait for timeout */
             if ((millis() - m_timestamp) < CONFIG_UI_SPLASH_DURATION) {

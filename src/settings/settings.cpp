@@ -155,3 +155,72 @@ int settings_temperature_set(const float temperature_c) {
     /* Return success */
     return 0;
 }
+
+/**
+ * @brief
+ * @param icon
+ * @param line1
+ * @param line2
+ * @return
+ */
+int settings_user_get(uint8_t *const icon, char *const line1, char *const line2) {
+    int res;
+
+    /* Load json document */
+    res = m_unpack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Handle icon */
+    size_t icon_size = m_doc["user"]["icon"].size();
+    if (icon_size != 32) {
+        return 0;
+    }
+    for (size_t i = 0; i < icon_size; i++) {
+        icon[i] = m_doc["user"]["icon"][i];
+        log_t("icon[%u] = 0x%02X", i, icon[i]);
+    }
+
+    /* Handle name */
+    const char *line1_settings = m_doc["user"]["name"][0];
+    const char *line2_settings = m_doc["user"]["name"][1];
+    if ((strlen(line1_settings) < 0 || strlen(line1_settings) > 12) ||  //
+        (strlen(line2_settings) < 0 || strlen(line2_settings) > 12)) {
+        return 0;
+    }
+    strncpy(line1, line1_settings, 13);
+    strncpy(line2, line2_settings, 13);
+    line1[12] = 0;
+    line2[12] = 0;
+
+    /* Return found */
+    return 1;
+}
+
+/**
+ * @brief
+ * @param icon
+ * @param line1
+ * @param line2
+ * @return
+ */
+int settings_user_set(const uint8_t icon[32], const char *line1, const char *line2) {
+    int res;
+
+    /* Update json document */
+    for (size_t i = 0; i < 32; i++) {
+        m_doc["user"]["icon"][i] = icon[i];
+    }
+    m_doc["user"]["name"][0] = line1;
+    m_doc["user"]["name"][1] = line2;
+
+    /* Save it */
+    res = m_repack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return success */
+    return 0;
+}
