@@ -24,6 +24,11 @@ static bool m_cached = false;
  */
 static int m_unpack(void) {
 
+    /* Don't do it again if already cached */
+    if (m_cached == true) {
+        return 0;
+    }
+
     /* Read from memory */
     m_eeprom.seek_read(0);
     DeserializationError unpack_res = deserializeMsgPack(m_doc, m_eeprom);
@@ -41,6 +46,9 @@ static int m_unpack(void) {
             return -1;
         }
     }
+
+    /* Flag as cached */
+    m_cached = true;
 
     /* Return success */
     return 0;
