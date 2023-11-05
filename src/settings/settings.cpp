@@ -107,7 +107,20 @@ int settings_memory_read(const size_t address, uint8_t *const data, const size_t
  */
 int settings_memory_wipe(void) {
     int res;
-    // TODO Prevent wipe while heating is turned on because it takes way too long in the current implementation
+
+    /* Invalidate cache */
+    m_cached = false;
+
+    /* Set empty document */
+    static const char empty[] = "{}";
+    DeserializationError unpack_res = deserializeJson(m_doc, (char *)(&empty[0]));
+    if (unpack_res != DeserializationError::Ok) {
+        log_e("Failed to create empty document (%d)!", unpack_res.code());
+        return -1;
+    }
+
+    /* Wipe eeprom contents
+     * @todo Prevent wipe while heating is turned on because it takes way too long in the current implementation */
     for (size_t i = 0; i < 8192U; i++) {
         uint8_t clear = 0xFF;
         res = m_eeprom.write(i, &clear, 1);
@@ -115,6 +128,8 @@ int settings_memory_wipe(void) {
             return -EIO;
         }
     }
+
+    /* Return success */
     return 0;
 }
 
