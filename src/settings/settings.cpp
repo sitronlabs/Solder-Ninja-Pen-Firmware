@@ -12,6 +12,56 @@
 /* Peripherals */
 static m24c64 m_eeprom;
 
+/* */
+StaticJsonDocument<1024> m_doc;
+
+static bool m_cached = false;
+
+/**
+ * @brief
+ * @param
+ * @return
+ */
+static int m_unpack(void) {
+
+    /* Read from memory */
+    m_eeprom.seek_read(0);
+    DeserializationError unpack_res = deserializeMsgPack(m_doc, m_eeprom);
+    if (unpack_res != DeserializationError::Ok) {
+        log_e("Failed to deserialize!");
+        return -1;
+    }
+
+    /* Dirty fix for when the document is empty */
+    if (m_doc.memoryUsage() == 0) {
+        static const char fix[] = "{}";
+        DeserializationError unpack_res = deserializeJson(m_doc, (char *)(&fix[0]));
+        if (unpack_res != DeserializationError::Ok) {
+            log_e("Failed to create empty document (%d)!", unpack_res.code());
+            return -1;
+        }
+    }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ *
+ */
+static int m_repack(void) {
+
+    /* Invalidate cache */
+    m_cached = false;
+
+    /* Write to memory */
+    m_eeprom.seek_write(0);
+    serializeMsgPack(m_doc, m_eeprom);
+
+    /* Return success */
+    return 0;
+}
+
 /**
  * @brief
  * @param
@@ -57,5 +107,51 @@ int settings_memory_wipe(void) {
             return -EIO;
         }
     }
+    return 0;
+}
+
+/**
+ * @brief
+ * @param temperature_c
+ * @return
+ */
+int settings_temperature_get(float &temperature_c) {
+    int res;
+
+    /* Load json document */
+    res = m_unpack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return if found */
+    if (m_doc["temperature"]["value"].is<float>() == true) {
+        temperature_c = m_doc["temperature"]["value"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief
+ * @param temperature_c
+ * @return
+ */
+int settings_temperature_set(const float temperature_c) {
+    int res;
+
+    /* Update json document */
+    m_doc["temperature"]["unit"] = "C";
+    m_doc["temperature"]["value"] = temperature_c;
+
+    /* Save it */
+    res = m_repack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return success */
     return 0;
 }

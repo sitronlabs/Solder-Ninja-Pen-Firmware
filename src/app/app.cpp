@@ -5,6 +5,7 @@
 #include "app/power/power.h"
 #include "element/element.h"
 #include "log/log.h"
+#include "settings/settings.h"
 
 /* Config */
 #include "../cfg/config.h"
@@ -15,6 +16,8 @@ static enum {
 } m_sm;
 static enum app_state m_state = APP_STATE_LOCKED;
 static float m_target = 300;
+static bool m_target_changed = false;
+static uint32_t m_target_changed_timestamp;
 
 /**
  *
@@ -34,6 +37,13 @@ int app_setup(void) {
     if (res < 0) {
         log_e("Failed to setup heating element!");
         return -1;
+    }
+
+    /* If available use target temperature from settings */
+    float temperature;
+    res = settings_temperature_get(temperature);
+    if (res == 1) {
+        m_target = temperature;
     }
 
     /* Return success */
@@ -121,11 +131,16 @@ float app_target_get(void) {
  */
 int app_target_increase(void) {
 
-    /* */
+    /* Compute new target */
     m_target += 10;
     if (m_target > CONFIG_APP_TARGET_MAX) {
         m_target = CONFIG_APP_TARGET_MAX;
     }
+
+    /* Save new target later on when the value has been stable for long enough
+     * in order to avoid too frequent eeprom writes */
+    m_target_changed = true;
+    m_target_changed_timestamp = millis();
 
     /* Pass along */
     element_temperature_target_set(m_target);
@@ -141,11 +156,16 @@ int app_target_increase(void) {
  */
 int app_target_decrease(void) {
 
-    /* */
+    /* Compute new target */
     m_target -= 10;
     if (m_target < CONFIG_APP_TARGET_MIN) {
         m_target = CONFIG_APP_TARGET_MIN;
     }
+
+    /* Save new target later on when the value has been stable for long enough
+     * in order to avoid too frequent eeprom writes */
+    m_target_changed = true;
+    m_target_changed_timestamp = millis();
 
     /* Pass along */
     element_temperature_target_set(m_target);
@@ -187,6 +207,12 @@ int app_task(void) {
     /* Lock if element has been disconnected */
     if (element_connected_get() == false) {
         app_lock();
+    }
+
+    /* Save tartget temperature when stable */
+    if ((m_target_changed == true) && (millis() - m_target_changed_timestamp >= 500)) {
+        settings_temperature_set(m_target);
+        m_target_changed = false;
     }
 
     /* Return success */
