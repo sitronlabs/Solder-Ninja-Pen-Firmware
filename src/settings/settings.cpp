@@ -208,8 +208,8 @@ int settings_user_get(uint8_t *const icon, char *const line1, char *const line2)
     /* Handle name */
     const char *line1_settings = m_doc["user"]["name"][0];
     const char *line2_settings = m_doc["user"]["name"][1];
-    if ((strlen(line1_settings) < 0 || strlen(line1_settings) > 12) ||  //
-        (strlen(line2_settings) < 0 || strlen(line2_settings) > 12)) {
+    if ((strlen(line1_settings) > 12) ||  //
+        (strlen(line2_settings) > 12)) {
         return 0;
     }
     strncpy(line1, line1_settings, 13);
@@ -266,8 +266,8 @@ int settings_product_get(char *const product_number, char *const serial_number) 
     /* */
     const char *pn = m_doc["product"]["product_number"];
     const char *sn = m_doc["product"]["serial_number"];
-    if ((m_doc["product"].containsKey("product_number") != true || strlen(pn) < 0 || strlen(pn) > 12) ||  //
-        (m_doc["product"].containsKey("serial_number") != true || strlen(sn) < 0 || strlen(sn) > 12)) {
+    if (((m_doc["product"].containsKey("product_number") != true) || (strlen(pn) > 12)) ||  //
+        ((m_doc["product"].containsKey("serial_number") != true) || (strlen(sn) > 12))) {
         return 0;
     }
     strncpy(product_number, pn, 13);
@@ -289,8 +289,8 @@ int settings_product_set(const char *const product_number, const char *const ser
     int res;
 
     /* */
-    if ((strlen(product_number) < 0 || strlen(product_number) > 12) ||  //
-        (strlen(serial_number) < 0 || strlen(serial_number) > 12)) {
+    if ((strlen(product_number) > 12) ||  //
+        (strlen(serial_number) > 12)) {
         return -EINVAL;
     }
 
