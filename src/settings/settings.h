@@ -2,7 +2,7 @@
 #define SETTINGS_H
 
 /* Project */
-#include "../errors/errors.h"
+#include "errors/errors.h"
 
 /* C/C++ libraries */
 #include <stddef.h>

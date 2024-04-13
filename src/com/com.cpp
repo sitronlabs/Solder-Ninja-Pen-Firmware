@@ -2,11 +2,11 @@
 #include "com.h"
 
 /* Project */
-#include "../../gen/version.h"
-#include "../app/app.h"
 #include "../cfg/config.h"
-#include "../log/log.h"
-#include "../settings/settings.h"
+#include "../gen/version.h"
+#include "app/app.h"
+#include "log/log.h"
+#include "settings/settings.h"
 
 /* Arduino libraries */
 #include <Arduino.h>

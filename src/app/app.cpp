@@ -2,7 +2,7 @@
 #include "app.h"
 
 /* Project */
-#include "app/power/power.h"
+#include "power/power.h"
 #include "element/element.h"
 #include "log/log.h"
 #include "settings/settings.h"

@@ -7,7 +7,7 @@
 #endif
 
 /* Config */
-#include "../../cfg/config.h"
+#include "../cfg/config.h"
 #ifndef CONFIG_LOG_ENTRY_MAX_LENGTH
 #define CONFIG_LOG_ENTRY_MAX_LENGTH 256  //!< Maximum length in characters of a log message.
 #endif

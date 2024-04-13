@@ -2,9 +2,9 @@
 #include "element.h"
 
 /* Project */
-#include "../errors/errors.h"
-#include "../log/log.h"
-#include "app/power/power.h"
+#include "errors/errors.h"
+#include "log/log.h"
+#include "power/power.h"
 
 /* Arduino libraries */
 #include <Arduino.h>
@@ -13,7 +13,7 @@
 #include <max31855.h>
 
 /* Config */
-#include "../../cfg/config.h"
+#include "../cfg/config.h"
 #define TIP_CYCLE_TIME_LIMIT 1000  //!< Maximum amount of time that a measuring plus heating cycle should take (in milliseconds).
 #define TIP_COEFFICIENT_C 466      //!< Specific heatt capacity of the heating element (in J / (kg * K)).
 #define TIP_COEFFICIENT_M 0.002    //!< Mass of the heating element (in kg).

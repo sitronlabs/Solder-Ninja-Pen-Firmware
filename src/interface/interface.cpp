@@ -2,14 +2,14 @@
 #include "interface.h"
 
 /* Project */
-#include "../../gen/version.h"
-#include "../app/app.h"
-#include "../app/power/power.h"
-#include "../element/element.h"
-#include "../log/log.h"
-#include "../settings/settings.h"
-#include "buttons.h"
-#include "magnet.h"
+#include "../gen/version.h"
+#include "app/app.h"
+#include "element/element.h"
+#include "interface/buttons.h"
+#include "interface/magnet.h"
+#include "log/log.h"
+#include "power/power.h"
+#include "settings/settings.h"
 
 /* Arduino libraries */
 #include <Arduino.h>

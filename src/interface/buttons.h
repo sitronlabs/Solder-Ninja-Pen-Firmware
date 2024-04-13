@@ -2,7 +2,7 @@
 #define BUTTONS_H
 
 /* Config */
-#include "../../cfg/config.h"
+#include "../cfg/config.h"
 
 /* C/C++ libraries */
 #include <errno.h>
