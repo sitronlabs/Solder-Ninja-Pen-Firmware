@@ -25,6 +25,9 @@ float app_target_get(void);
 int app_target_increase(void);
 int app_target_decrease(void);
 
+/* Boost */
+bool app_boost_activated_get(void);
+
 // /**
 //  * Requets to turn on heating.
 //  * Heating might start with some delay if the available contracts need additional negotiation.
