@@ -1025,6 +1025,18 @@ int power_task(void) {
 
         case STATE_DONE: {
 
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 0) {
+                break;
+            }
+
             /* Do nothing
              * @todo Maybe monitor voltage in case of pd / hvdcp */
             break;
