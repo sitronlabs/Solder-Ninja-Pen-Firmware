@@ -7,9 +7,10 @@
 #define CONFIG_APP_TARGET_MAX_BOOST 400  //!< Maximum target temperature in degrees celsius
 
 /* Accelerometer config */
-#define CONFIG_ACCEL_SAMPLE_PERIOD 500                //!< In milliseconds
-#define CONFIG_ACCEL_ACTIVE_ANGULAR_SPEED_TRESHOLD 5  //!< In degrees per second.
-#define CONFIG_ACCEL_IDLE_TIME 300000                 //!< In milliseconds
+#define CONFIG_ACCEL_SAMPLE_PERIOD 100               //!< In milliseconds
+#define CONFIG_ACCEL_IDLE_TIME 180000                //!< In milliseconds
+#define CONFIG_ACCEL_IDLE_ANGULAR_SPEED_TRESHOLD 40  //!< In degrees per second.
+#define CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD 2    //!< In g. Has to be lower than the configured full scale.
 
 /* Buttons config */
 #define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30                    //!<

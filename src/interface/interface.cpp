@@ -317,6 +317,7 @@ int interface_task(void) {
                 }
                 case APP_STATE_ASLEEP: {
                     log_d("Redirect to STATE_MONITOR_ASLEEP");
+                    accelerometer_wake_reset();
                     m_sm = STATE_MONITOR_ASLEEP;
                     break;
                 }
@@ -525,7 +526,7 @@ int interface_task(void) {
             m_library.display();
 
             /* Handle accelerometer */
-            if (accelerometer_shake_detected_get()) {
+            if (accelerometer_wake_detected_get()) {
                 app_wake();
             }
 

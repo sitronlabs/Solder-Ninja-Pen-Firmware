@@ -17,8 +17,8 @@ static lis2dh12 m_accel;
 static uint32_t m_idle_time;
 static bool m_idle_detected;
 
-/* Variables for shake detection */
-static bool m_shake_detected;
+/* Variables for wake detection */
+static bool m_wake_detected;
 
 /**
  * @brief
@@ -66,10 +66,23 @@ int accelerometer_idle_detected_get(void) {
     return m_idle_detected;
 }
 
-int accelerometer_shake_detected_get(void) {
-    bool ret = m_shake_detected;
-    m_shake_detected = false;
-    return ret;
+/**
+ * @brief
+ * @param
+ * @return
+ */
+int accelerometer_wake_reset(void) {
+    m_wake_detected = false;
+    return 0;
+}
+
+/**
+ * @brief
+ * @param
+ * @return
+ */
+int accelerometer_wake_detected_get(void) {
+    return m_wake_detected;
 }
 
 int accelerometer_task(void) {
@@ -98,12 +111,12 @@ int accelerometer_task(void) {
             /* Configure the accelerometer */
             res = 0;
             res |= m_accel.range_set(LIS2DH12_RANGE_2G);
-            res |= m_accel.resolution_set(LIS2DH12_RESOLUTION_12BITS);
+            res |= m_accel.resolution_set(LIS2DH12_RESOLUTION_10BITS);
             res |= m_accel.axis_enabled_set(true, true, true);
             // res |= m_accel.activity_configure(1100, 5000);
             // res |= m_accel.activity_int2_routed_set(true);
-            res |= m_accel.doubletap_configure(250, 120, 10, 560, true);
-            res |= m_accel.sampling_set(LIS2DH12_SAMPLING_400HZ);
+            // res |= m_accel.doubletap_configure(250, 120, 10, 560, true);
+            res |= m_accel.sampling_set(LIS2DH12_SAMPLING_10HZ);
             if (res != 0) {
                 log_e("Failed to configure accelerometer!");
                 m_sm = STATE_ERROR;
@@ -121,34 +134,38 @@ int accelerometer_task(void) {
             if ((millis() - m_timestamp) > CONFIG_ACCEL_SAMPLE_PERIOD) {
                 m_timestamp = millis();
 
-                /* Compute angle */
-                float x;
-                m_accel.acceleration_read(LIS2DH12_AXIS_X, x);
+                /* Read accelerations */
+                float x, y, z;
+                res = m_accel.acceleration_read(x, y, z);
+                if (res < 0) {
+                    log_w("Failed to read acceleration!");
+                    break;
+                }
+
+                /* Detect idle by looking at angular velocity */
                 float angle_deg = asinf(x) * 57.2958;
-
-                /* Compute angluar velocity */
-                static float m_angle_previous;
-                float angular_rotation = abs(angle_deg - m_angle_previous) / (1000.0 / CONFIG_ACCEL_SAMPLE_PERIOD);
-                m_angle_previous = angle_deg;
-                // log_t("Angular rotation = %f deg/s", angular_rotation);
-
-                /* Apply a thershold to detect inactivity */
-                if (angular_rotation >= CONFIG_ACCEL_ACTIVE_ANGULAR_SPEED_TRESHOLD) {
-                    m_idle_detected = false;
-                    m_idle_time = 0;
-                } else {
-                    if (m_idle_time >= CONFIG_ACCEL_IDLE_TIME) {
-                        m_idle_detected = true;
+                if (isfinite(angle_deg)) {
+                    static float angle_previous_deg;
+                    float angular_speed_degps = abs(angle_deg - angle_previous_deg) * (1000.0 / CONFIG_ACCEL_SAMPLE_PERIOD);
+                    log_t("Angle %.3f -> %.3f, angular speed = %.3f deg/s", angle_previous_deg, angle_deg, angular_speed_degps);
+                    angle_previous_deg = angle_deg;
+                    if (angular_speed_degps >= CONFIG_ACCEL_IDLE_ANGULAR_SPEED_TRESHOLD) {
+                        m_idle_detected = false;
+                        m_idle_time = 0;
                     } else {
-                        m_idle_time += CONFIG_ACCEL_SAMPLE_PERIOD;
+                        if (m_idle_time >= CONFIG_ACCEL_IDLE_TIME) {
+                            m_idle_detected = true;
+                        } else {
+                            m_idle_time += CONFIG_ACCEL_SAMPLE_PERIOD;
+                        }
                     }
                 }
 
-                /* Detect double tap */
-                uint8_t reg_click_src;
-                m_accel.register_read(LIS2DH12_REGISTER_CLICK_SRC, reg_click_src);
-                if (reg_click_src & (1 << 5)) {
-                    m_shake_detected = true;
+                /* Detect wake by looking at sum of accelerations */
+                float movement = sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
+                log_t("Movement = %f", movement);
+                if (movement >= CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD) {
+                    m_wake_detected = true;
                 }
             }
 

@@ -8,7 +8,8 @@
 int accelerometer_setup(void);
 int accelerometer_idle_reset(void);
 int accelerometer_idle_detected_get(void);
-int accelerometer_shake_detected_get(void);
+int accelerometer_wake_reset(void);
+int accelerometer_wake_detected_get(void);
 int accelerometer_task(void);
 
 #endif
