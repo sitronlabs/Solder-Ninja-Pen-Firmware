@@ -524,6 +524,11 @@ int interface_task(void) {
             }
             m_library.display();
 
+            /* Handle accelerometer */
+            if (accelerometer_shake_detected_get()) {
+                app_wake();
+            }
+
             /* Handle buttons
              * Short and long presses on either button will trigger a wake
              * A short press on both buttons will trigger a lock

@@ -13,9 +13,12 @@
 /* Peripherals */
 static lis2dh12 m_accel;
 
-/* Work variables for idle detection */
+/* Variables for idle detection */
 static uint32_t m_idle_time;
 static bool m_idle_detected;
+
+/* Variables for shake detection */
+static bool m_shake_detected;
 
 /**
  * @brief
@@ -63,6 +66,12 @@ int accelerometer_idle_detected_get(void) {
     return m_idle_detected;
 }
 
+int accelerometer_shake_detected_get(void) {
+    bool ret = m_shake_detected;
+    m_shake_detected = false;
+    return ret;
+}
+
 int accelerometer_task(void) {
     int res;
 
@@ -87,18 +96,18 @@ int accelerometer_task(void) {
             }
 
             /* Configure the accelerometer */
-            log_t("Before config");
             res = 0;
             res |= m_accel.range_set(LIS2DH12_RANGE_2G);
-            res |= m_accel.sampling_set(LIS2DH12_SAMPLING_10HZ);
+            res |= m_accel.resolution_set(LIS2DH12_RESOLUTION_12BITS);
             res |= m_accel.axis_enabled_set(true, true, true);
-            res |= m_accel.activity_configure(1100, 5000);
-            res |= m_accel.activity_int2_routed_set(true);
+            // res |= m_accel.activity_configure(1100, 5000);
+            // res |= m_accel.activity_int2_routed_set(true);
+            res |= m_accel.doubletap_configure(250, 120, 10, 560, true);
+            res |= m_accel.sampling_set(LIS2DH12_SAMPLING_400HZ);
             if (res != 0) {
                 log_e("Failed to configure accelerometer!");
                 m_sm = STATE_ERROR;
             }
-            log_t("After config");
 
             /* Move on */
             m_sm = STATE_1;
@@ -107,10 +116,12 @@ int accelerometer_task(void) {
 
         case STATE_1: {
 
-            /* Every now and then, compute angle */
+            /* Periodically */
             static uint32_t m_timestamp;
             if ((millis() - m_timestamp) > CONFIG_ACCEL_SAMPLE_PERIOD) {
                 m_timestamp = millis();
+
+                /* Compute angle */
                 float x;
                 m_accel.acceleration_read(LIS2DH12_AXIS_X, x);
                 float angle_deg = asinf(x) * 57.2958;
@@ -119,7 +130,7 @@ int accelerometer_task(void) {
                 static float m_angle_previous;
                 float angular_rotation = abs(angle_deg - m_angle_previous) / (1000.0 / CONFIG_ACCEL_SAMPLE_PERIOD);
                 m_angle_previous = angle_deg;
-                log_t("Angular rotation = %f deg/s", angular_rotation);
+                // log_t("Angular rotation = %f deg/s", angular_rotation);
 
                 /* Apply a thershold to detect inactivity */
                 if (angular_rotation >= CONFIG_ACCEL_ACTIVE_ANGULAR_SPEED_TRESHOLD) {
@@ -132,7 +143,33 @@ int accelerometer_task(void) {
                         m_idle_time += CONFIG_ACCEL_SAMPLE_PERIOD;
                     }
                 }
+
+                /* Detect double tap */
+                uint8_t reg_click_src;
+                m_accel.register_read(LIS2DH12_REGISTER_CLICK_SRC, reg_click_src);
+                if (reg_click_src & (1 << 5)) {
+                    m_shake_detected = true;
+                }
             }
+
+            // /* Detect double tap */
+            // static uint32_t m_t2;
+            // if (millis() - m_t2 >= 500) {
+            //     m_t2 = millis();
+            //     // uint8_t reg_int1_src, reg_int2_src;
+            //     // m_accel.register_read(LIS2DH12_REGISTER_INT1_SRC, reg_int1_src);
+            //     // m_accel.register_read(LIS2DH12_REGISTER_INT2_SRC, reg_int2_src);
+            //     // log_t("0x%02X 0x%02X, %d, %d", reg_int1_src, reg_int2_src, digitalRead(12), digitalRead(13));
+            //     uint8_t reg_click_src;
+            //     m_accel.register_read(LIS2DH12_REGISTER_CLICK_SRC, reg_click_src);
+            //     if (reg_click_src & (1 << 5)) {
+            //         log_t("0x%02X DOUBLE", reg_click_src);
+            //     } else if (reg_click_src & (1 << 4)) {
+            //         log_t("0x%02X SINGLE", reg_click_src);
+            //     } else {
+            //         log_t("0x%02X", reg_click_src);
+            //     }
+            // }
 
             // /* Detect inactivity */
             // static uint32_t m_timestamp;
