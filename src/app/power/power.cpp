@@ -44,7 +44,7 @@ static int m_qc_dp_m_pin = 28;
 static int m_adjust_buck(const float power_limit) {
 
     /* Compute buck voltage */
-    float buck_voltage = sqrt(((power_limit)*0.80) * 2.1);
+    float buck_voltage = sqrt(((power_limit) * 0.80) * 2.1);
     log_d("Using buck voltage of %.2fV.", buck_voltage);
 
     /* Configure dac5311 */
@@ -187,10 +187,29 @@ int power_setup(void) {
  * @return
  */
 int power_contract_get(struct power_option *contract) {
+    float power_max;
+    int index_max;
 
-    /* Find out the maximum amount of power offered by the options already in the list */
-    float power_max = 0;
-    int index_max = -1;
+    /* Find out the best contract offered by USB PD first */
+    power_max = 0;
+    index_max = -1;
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        if (m_options[i].assigned == true && m_options[i].option.provider == POWER_PROVIDER_USB_PD) {
+            float power_iter = m_option_power_max_compute(m_options[i].option);
+            if (power_iter > power_max) {
+                power_max = power_iter;
+                index_max = i;
+            }
+        }
+    }
+    if (index_max >= 0) {
+        *contract = m_options[index_max].option;
+        return 0;
+    }
+
+    /* If no USB PD option exists, find out the best contrat in amongst the other options */
+    power_max = 0;
+    index_max = -1;
     for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
         if (m_options[i].assigned == true) {
             float power_iter = m_option_power_max_compute(m_options[i].option);
@@ -222,25 +241,19 @@ int power_contract_get(struct power_option *contract) {
  */
 int power_negotiated_power_limit_get(float *const power_limit) {
 
-    /* Find out the maximum amount of power offered by the options already in the list */
-    float power_max = 0;
-    int index_max = -1;
-    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
-        if (m_options[i].assigned == true) {
-            float power_iter = m_option_power_max_compute(m_options[i].option);
-            if (power_iter > power_max) {
-                power_max = power_iter;
-                index_max = i;
-            }
-        }
-    }
-    if (index_max >= 0) {
-        *power_limit = power_max;
-        return 0;
-    } else {
+    int res;
+
+    /* Find out the maximum amount of power offered by the options */
+    struct power_option contract;
+    res = power_contract_get(&contract);
+    if (res < 0) {
         *power_limit = 0;
         return -1;
     }
+
+    /* Return success */
+    *power_limit = m_option_power_max_compute(contract);
+    return 0;
 }
 
 /**
