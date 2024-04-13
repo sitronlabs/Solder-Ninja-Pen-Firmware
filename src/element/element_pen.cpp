@@ -298,7 +298,7 @@ int element_task(void) {
             }
 
             /* Ask usb power negotiator how much power we are allowed to draw */
-            res = power_negotiated_power_limit_get(&m_power_limit);
+            res = power_negotiated_power_limit_get(m_power_limit);
             if (res < 0) {
                 break;
             }

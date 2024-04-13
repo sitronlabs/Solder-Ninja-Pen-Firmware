@@ -31,8 +31,8 @@ struct power_option {
 };
 
 /* Contract */
-int power_contract_get(struct power_option *contract);
-int power_negotiated_power_limit_get(float *const power_limit);
+int power_contract_get(struct power_option &contract);
+int power_negotiated_power_limit_get(float &power_limit);
 
 /* Periodic task */
 int power_task(void);

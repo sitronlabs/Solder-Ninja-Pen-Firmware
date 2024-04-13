@@ -345,7 +345,7 @@ int interface_task(void) {
             }
             m_library.setTextSize(1);
             struct power_option contract;
-            res = power_contract_get(&contract);
+            res = power_contract_get(contract);
             if (res < 0) {
                 m_library.setCursor(11 * 6, 0);
                 m_library.print("--.-V");
@@ -406,7 +406,7 @@ int interface_task(void) {
             }
             m_library.setTextSize(1);
             struct power_option contract;
-            res = power_contract_get(&contract);
+            res = power_contract_get(contract);
             if (res < 0) {
                 m_library.setCursor(11 * 6, 0);
                 m_library.print("--.-V");
@@ -482,7 +482,7 @@ int interface_task(void) {
             }
             m_library.setTextSize(1);
             struct power_option contract;
-            res = power_contract_get(&contract);
+            res = power_contract_get(contract);
             if (res < 0) {
                 m_library.setCursor(11 * 6, 0);
                 m_library.print("--.-V");

@@ -186,7 +186,7 @@ int power_setup(void) {
  * @param contract
  * @return
  */
-int power_contract_get(struct power_option *contract) {
+int power_contract_get(struct power_option &contract) {
     float power_max;
     int index_max;
 
@@ -203,7 +203,7 @@ int power_contract_get(struct power_option *contract) {
         }
     }
     if (index_max >= 0) {
-        *contract = m_options[index_max].option;
+        contract = m_options[index_max].option;
         return 0;
     }
 
@@ -220,14 +220,14 @@ int power_contract_get(struct power_option *contract) {
         }
     }
     if (index_max >= 0) {
-        *contract = m_options[index_max].option;
+        contract = m_options[index_max].option;
         return 0;
     } else {
         return -1;
     }
 
     // if (m_options[m_contract].assigned == true) {
-    //     *contract = m_options[m_contract].option;
+    //     contract = m_options[m_contract].option;
     //     return 0;
     // } else {
     //     return -1;
@@ -239,20 +239,20 @@ int power_contract_get(struct power_option *contract) {
  * @param power_limit
  * @return
  */
-int power_negotiated_power_limit_get(float *const power_limit) {
+int power_negotiated_power_limit_get(float &power_limit) {
 
     int res;
 
     /* Find out the maximum amount of power offered by the options */
     struct power_option contract;
-    res = power_contract_get(&contract);
+    res = power_contract_get(contract);
     if (res < 0) {
-        *power_limit = 0;
+        power_limit = 0;
         return -1;
     }
 
     /* Return success */
-    *power_limit = m_option_power_max_compute(contract);
+    power_limit = m_option_power_max_compute(contract);
     return 0;
 }
 
