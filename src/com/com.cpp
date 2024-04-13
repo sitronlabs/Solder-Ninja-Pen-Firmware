@@ -172,7 +172,7 @@ int com_command_process(const char *const str, const size_t len) {
         uint8_t icon[32];
         for (size_t i = 0; i < icon_size; i++) {
             icon[i] = doc["icon"][i];
-            log_t("icon[%u] = 0x%02X", i, icon[i]);
+            // log_t("icon[%u] = 0x%02X", i, icon[i]);
         }
 
         /* Handle name */

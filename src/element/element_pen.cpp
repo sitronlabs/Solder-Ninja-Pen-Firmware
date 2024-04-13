@@ -273,7 +273,7 @@ int element_task(void) {
              * 1) are not accurate right after heating,
              * 1) can be affected by electrically noisy environments */
             if (temperature_thermocouple_c < 0 || temperature_thermocouple_c > 500) {
-                log_t("Read %4.0f invalid", temperature_thermocouple_c);
+                // log_t("Read %4.0f invalid", temperature_thermocouple_c);
                 break;
             }
 
@@ -288,8 +288,8 @@ int element_task(void) {
             m_temperature_filter.add(m_temperature_measured_c);
             m_temperature_filter_last_addition = millis();
 
-            /* Log */
-            log_t("Read %4.0f valid", temperature_thermocouple_c);
+            // /* Log */
+            // log_t("Read %4.0f valid", temperature_thermocouple_c);
 
             /* If heating is not enabled, restart a cycle */
             if (m_heating_enabled != true) {
@@ -329,7 +329,7 @@ int element_task(void) {
             }
 
             /* Log */
-            log_t("Pid  %4.0f / %4.0f -> %5.2f J (%u ms)", m_pid_input, m_pid_target, m_pid_output, m_heating_duration);
+            // log_t("Pid  %4.0f / %4.0f -> %5.2f J (%u ms)", m_pid_input, m_pid_target, m_pid_output, m_heating_duration);
 
             /* If we don't need to heat, restart a cycle */
             if (m_heating_duration <= 0) {

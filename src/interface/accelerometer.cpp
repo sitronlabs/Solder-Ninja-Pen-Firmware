@@ -147,7 +147,7 @@ int accelerometer_task(void) {
                 if (isfinite(angle_deg)) {
                     static float angle_previous_deg;
                     float angular_speed_degps = abs(angle_deg - angle_previous_deg) * (1000.0 / CONFIG_ACCEL_SAMPLE_PERIOD);
-                    log_t("Angle %.3f -> %.3f, angular speed = %.3f deg/s", angle_previous_deg, angle_deg, angular_speed_degps);
+                    // log_t("Angle %.3f -> %.3f, angular speed = %.3f deg/s", angle_previous_deg, angle_deg, angular_speed_degps);
                     angle_previous_deg = angle_deg;
                     if (angular_speed_degps >= CONFIG_ACCEL_IDLE_ANGULAR_SPEED_TRESHOLD) {
                         m_idle_detected = false;
@@ -163,7 +163,7 @@ int accelerometer_task(void) {
 
                 /* Detect wake by looking at sum of accelerations */
                 float movement = sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
-                log_t("Movement = %f", movement);
+                // log_t("Movement = %f", movement);
                 if (movement >= CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD) {
                     m_wake_detected = true;
                 }

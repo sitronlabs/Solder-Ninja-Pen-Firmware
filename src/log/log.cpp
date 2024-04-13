@@ -41,7 +41,6 @@ int log_setup(void) {
     //         }
     //     }
     // }
-    Serial.printf("Hello world!\r\n");
 #else
 #error Invalid hardware version
 #endif

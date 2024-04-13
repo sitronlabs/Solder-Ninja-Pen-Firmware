@@ -202,7 +202,7 @@ int settings_user_get(uint8_t *const icon, char *const line1, char *const line2)
     }
     for (size_t i = 0; i < icon_size; i++) {
         icon[i] = m_doc["user"]["icon"][i];
-        log_t("icon[%u] = 0x%02X", i, icon[i]);
+        // log_t("icon[%u] = 0x%02X", i, icon[i]);
     }
 
     /* Handle name */
