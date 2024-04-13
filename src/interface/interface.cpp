@@ -5,6 +5,7 @@
 #include "../gen/version.h"
 #include "app/app.h"
 #include "element/element.h"
+#include "interface/accelerometer.h"
 #include "interface/buttons.h"
 #include "interface/magnet.h"
 #include "log/log.h"
@@ -66,10 +67,17 @@ int interface_setup(void) {
         return -ERROR_GENERIC;
     }
 
-    /* Setup input: magnet sensor */
+    /* Setup magnet sensor */
     res = magnet_setup();
     if (res < 0) {
         log_e("Failed to setup magnet sensor!");
+        return -ERROR_GENERIC;
+    }
+
+    /* Setup accelerometer */
+    res = accelerometer_setup();
+    if (res < 0) {
+        log_e("Failed to setup accelerometer!");
         return -ERROR_GENERIC;
     }
 
@@ -108,6 +116,7 @@ int interface_task(void) {
     /* Handle display */
 
     /* Handle accelerometer */
+    accelerometer_task();
 
     /* Handle input: magnet sensor */
     static enum {
@@ -302,6 +311,7 @@ int interface_task(void) {
                 }
                 case APP_STATE_HEATING: {
                     log_d("Redirect to STATE_MONITOR_HEATING");
+                    accelerometer_idle_reset();
                     m_sm = STATE_MONITOR_HEATING;
                     break;
                 }
@@ -432,6 +442,11 @@ int interface_task(void) {
                 m_library.printf("%3.1fA", contract.current_max);
             }
             m_library.display();
+
+            /* Handle accelerometer */
+            if (accelerometer_idle_detected_get()) {
+                app_sleep();
+            }
 
             /* Handle buttons
              * Short and long presses on either button will adjust target temperature

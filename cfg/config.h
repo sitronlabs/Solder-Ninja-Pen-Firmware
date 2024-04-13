@@ -6,6 +6,11 @@
 #define CONFIG_APP_TARGET_MAX_SAFE 350   //!< Maximum target temperature in degrees celsius
 #define CONFIG_APP_TARGET_MAX_BOOST 400  //!< Maximum target temperature in degrees celsius
 
+/* Accelerometer config */
+#define CONFIG_ACCEL_SAMPLE_PERIOD 500                //!< In milliseconds
+#define CONFIG_ACCEL_ACTIVE_ANGULAR_SPEED_TRESHOLD 5  //!< In degrees per second.
+#define CONFIG_ACCEL_IDLE_TIME 300000                 //!< In milliseconds
+
 /* Buttons config */
 #define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30                    //!<
 #define CONFIG_BUTTONS_PRESS_LONG_DURATION 500                    //!<
