@@ -48,3 +48,6 @@ f.write("const char version_date[] = \"" + version_time + "\";\n")
 f.write("const char version_commit[] = \"" + git_hash + "\";\n")
 f.write("const char version_string[] = \"" + version_string + "\";\n")
 f.write("#endif\n")
+
+# Rename output file
+env.Replace(PROGNAME="slto00001-%s" % version_string)
