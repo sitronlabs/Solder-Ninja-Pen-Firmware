@@ -277,6 +277,11 @@ int element_task(void) {
                 break;
             }
 
+            /* Improve low temperature accuracy */
+            if ((temperature_thermocouple_c < 30) && (temperature_thermocouple_c < temperature_internal_c)) {
+                temperature_thermocouple_c = (temperature_thermocouple_c + temperature_internal_c) / 2.0;
+            }
+
             // /* If needed, compute the dtemperature/denergy to replace the default one */
             // if (m_dt_de_available == false ) {
             // TODO
