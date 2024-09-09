@@ -1,6 +1,9 @@
 /* Self header */
 #include "buttons.h"
 
+/* Project */
+#include "settings/settings.h"
+
 /* Arduino libraries */
 #include <Arduino.h>
 
@@ -39,8 +42,29 @@ int buttons_setup(void) {
 }
 
 enum buttons_event buttons_event_get(void) {
+
+    /* Retrieve pending event*/
     enum buttons_event ret = m_event;
+
+    /* Handle inversion if interface is rotated */
+    bool left_handed = false;
+    settings_interface_rotation_get(left_handed);
+    if (left_handed) {
+        if (ret == BUTTONS_EVENT_LEFT_SHORT) {
+            ret = BUTTONS_EVENT_RIGHT_SHORT;
+        } else if (ret == BUTTONS_EVENT_LEFT_LONG) {
+            ret = BUTTONS_EVENT_RIGHT_LONG;
+        } else if (ret == BUTTONS_EVENT_RIGHT_SHORT) {
+            ret = BUTTONS_EVENT_LEFT_SHORT;
+        } else if (ret == BUTTONS_EVENT_RIGHT_LONG) {
+            ret = BUTTONS_EVENT_LEFT_LONG;
+        }
+    }
+
+    /* Clear pending event */
     m_event = BUTTONS_EVENT_NONE;
+
+    /* Return */
     return ret;
 }
 

@@ -18,5 +18,7 @@ int settings_user_get(uint8_t *const icon, char *const line1, char *const line2)
 int settings_user_set(const uint8_t icon[32], const char *line1, const char *line2);
 int settings_product_get(char *const product_number, char *const serial_number);
 int settings_product_set(const char *const product_number, const char *const serial_number);
+int settings_interface_rotation_get(bool &left_handed);
+int settings_interface_rotation_set(const bool left_handed);
 
 #endif

@@ -38,7 +38,9 @@ static enum {
     STATE_MONITOR_HEATING,
     STATE_MONITOR_ASLEEP,
     STATE_MONITOR_ADJUST,
-    STATE_MENU,
+    STATE_MENU_HOME,
+    STATE_MENU_DISPLAY_ROTATION_0,
+    STATE_MENU_DISPLAY_ROTATION_1,
 } m_sm;
 
 /* Icon bitmaps */
@@ -86,6 +88,14 @@ int interface_setup(void) {
     res = m_library.setup(Wire, 0x3C, PF1, m_buffer);
 #elif R8A
     res = m_library.setup(Wire, 0x3C, 6, m_buffer);
+    if (res < 0) {
+        log_e("Failed to setup display!");
+        return -ERROR_GENERIC;
+    }
+    bool left_handed = false;
+    settings_interface_rotation_get(left_handed);
+    m_library.setRotation(left_handed ? 2 : 0);
+
 #else
 #error Invalid hardware version
 #endif
@@ -381,8 +391,8 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    // app_lock();
-                    // m_sm = STATE_MENU;
+                    app_lock();
+                    m_sm = STATE_MENU_HOME;
                     break;
                 }
             }
@@ -474,8 +484,8 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    // app_lock();
-                    // m_sm = STATE_MENU;
+                    app_lock();
+                    m_sm = STATE_MENU_HOME;
                     break;
                 }
             }
@@ -549,8 +559,8 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    // app_lock();
-                    // m_sm = STATE_MENU;
+                    app_lock();
+                    m_sm = STATE_MENU_HOME;
                     break;
                 }
             }
@@ -596,15 +606,75 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_MENU: {
+        case STATE_MENU_HOME: {
+            m_sm = STATE_MENU_DISPLAY_ROTATION_0;
+            break;
+        }
+
+        case STATE_MENU_DISPLAY_ROTATION_0: {
 
             /* Display menu page */
             m_library.clear();
             m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Disp rot.");
             m_library.display();
 
             /* Handle buttons */
             switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    // m_sm = STATE_MENU_DISPLAY_BRIGHTNESS_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_DISPLAY_ROTATION_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_MENU_DISPLAY_ROTATION_1: {
+
+            /* Retrieve interface orientation from settings */
+            bool left_handed = false;
+            res = settings_interface_rotation_get(left_handed);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Disp rot.");
+            m_library.setCursor(20, 9);
+            m_library.printf("%s handed", left_handed ? "Left" : "Right");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT:
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    left_handed = !left_handed;
+                    settings_interface_rotation_set(left_handed);
+                    m_library.setRotation(left_handed ? 2 : 0);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_DISPLAY_ROTATION_0;
+                    break;
+                }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;

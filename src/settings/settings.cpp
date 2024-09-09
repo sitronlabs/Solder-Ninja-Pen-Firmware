@@ -307,3 +307,48 @@ int settings_product_set(const char *const product_number, const char *const ser
     /* Return success */
     return 0;
 }
+
+/**
+ * @brief
+ * @param left_handed
+ * @return
+ */
+int settings_interface_rotation_get(bool &left_handed) {
+    int res;
+
+    /* Load json document */
+    res = m_unpack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return if found */
+    if (m_doc["interface"]["rotation"].is<int>() == true) {
+        left_handed = (m_doc["interface"]["rotation"] == 1);
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief
+ * @param left_handed
+ * @return
+ */
+int settings_interface_rotation_set(const bool left_handed) {
+    int res;
+
+    /* */
+    m_doc["interface"]["rotation"] = (left_handed) ? 1 : 0;
+
+    /* Save it */
+    res = m_repack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return success */
+    return 0;
+}
