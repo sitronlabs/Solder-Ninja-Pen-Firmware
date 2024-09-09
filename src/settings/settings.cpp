@@ -352,3 +352,59 @@ int settings_interface_rotation_set(const bool left_handed) {
     /* Return success */
     return 0;
 }
+
+/**
+ * @brief
+ * @param percent
+ * @return
+ */
+int settings_display_brightness_get(int &percent) {
+    int res;
+
+    /* Load json document */
+    res = m_unpack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return if found */
+    if (m_doc["display"]["brightness"].is<int>() == true) {
+        percent = m_doc["display"]["brightness"];
+        if (percent < 10) {
+            percent = 10;
+        } else if (percent > 100) {
+            percent = 100;
+        }
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief
+ * @param percent
+ * @return
+ */
+int settings_display_brightness_set(const int percent) {
+    int res;
+
+    /* */
+    if ((percent < 10) ||  //
+        (percent > 100)) {
+        return -EINVAL;
+    }
+
+    /* */
+    m_doc["display"]["brightness"] = percent;
+
+    /* Save it */
+    res = m_repack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return success */
+    return 0;
+}

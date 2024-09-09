@@ -41,6 +41,8 @@ static enum {
     STATE_MENU_HOME,
     STATE_MENU_DISPLAY_ROTATION_0,
     STATE_MENU_DISPLAY_ROTATION_1,
+    STATE_MENU_DISPLAY_BRIGHTNESS_0,
+    STATE_MENU_DISPLAY_BRIGHTNESS_1,
 } m_sm;
 
 /* Icon bitmaps */
@@ -95,6 +97,9 @@ int interface_setup(void) {
     bool left_handed = false;
     settings_interface_rotation_get(left_handed);
     m_library.setRotation(left_handed ? 2 : 0);
+    int brightness = 100;
+    settings_display_brightness_get(brightness);
+    m_library.brightness_set(brightness / 100.0);
 
 #else
 #error Invalid hardware version
@@ -629,7 +634,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
-                    // m_sm = STATE_MENU_DISPLAY_BRIGHTNESS_0;
+                    m_sm = STATE_MENU_DISPLAY_BRIGHTNESS_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
@@ -682,6 +687,90 @@ int interface_task(void) {
             }
 
             /* That's it */
+            break;
+        }
+
+        case STATE_MENU_DISPLAY_BRIGHTNESS_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Disp bright.");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_DISPLAY_ROTATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_DISPLAY_BRIGHTNESS_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_MENU_DISPLAY_BRIGHTNESS_1: {
+
+            /* Retrieve brightness from settings */
+            int brightness = 100;
+            res = settings_display_brightness_get(brightness);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Disp bright.");
+            m_library.setCursor(20, 9);
+            m_library.printf("%d%%", brightness);
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    if (brightness >= 20) {
+                        brightness -= 10;
+                    }
+                    brightness = 10 * (brightness / 10);
+                    m_library.brightness_set(brightness / 100.0);
+                    settings_display_brightness_set(brightness);
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    if (brightness <= 90) {
+                        brightness += 10;
+                    }
+                    brightness = 10 * (brightness / 10);
+                    m_library.brightness_set(brightness / 100.0);
+                    settings_display_brightness_set(brightness);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_DISPLAY_BRIGHTNESS_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+            }
+
             break;
         }
 

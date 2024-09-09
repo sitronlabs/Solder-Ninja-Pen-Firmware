@@ -20,5 +20,7 @@ int settings_product_get(char *const product_number, char *const serial_number);
 int settings_product_set(const char *const product_number, const char *const serial_number);
 int settings_interface_rotation_get(bool &left_handed);
 int settings_interface_rotation_set(const bool left_handed);
+int settings_display_brightness_get(int &percent);
+int settings_display_brightness_set(const int percent);
 
 #endif
