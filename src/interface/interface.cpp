@@ -562,7 +562,7 @@ int interface_task(void) {
         case STATE_MONITOR_ADJUST: {
 
             /* Revert after timeout */
-            if ((millis() - m_timestamp) >= 1000) {  // TODO Change by a config value
+            if ((millis() - m_timestamp) >= CONFIG_UI_ADJUST_DURATION) {
                 m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }

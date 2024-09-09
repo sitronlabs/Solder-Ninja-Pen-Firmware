@@ -233,7 +233,7 @@ int app_task(void) {
     }
 
     /* Disable boost after a while */
-    if ((m_boost_activated == true) && (millis() - m_boost_timestamp >= 10000)) {
+    if ((m_boost_activated == true) && (millis() - m_boost_timestamp >= CONFIG_APP_BOOST_DURATION_LIMIT)) {
         if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
             m_target = CONFIG_APP_TARGET_MAX_SAFE;
             element_temperature_target_set(m_target);
