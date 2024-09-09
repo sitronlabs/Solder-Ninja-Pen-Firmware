@@ -5,7 +5,7 @@
 #define CONFIG_APP_TARGET_MIN 0                //!< Minimum target temperature in degrees celsius
 #define CONFIG_APP_TARGET_MAX_SAFE 350         //!< Maximum target temperature in degrees celsius
 #define CONFIG_APP_TARGET_MAX_BOOST 400        //!< Maximum target temperature in degrees celsius
-#define CONFIG_APP_BOOST_DURATION_LIMIT 10000  //!< Amount of time after which the boost will end, in milliseconds
+#define CONFIG_APP_BOOST_DURATION_LIMIT 30000  //!< Amount of time after which the boost will end, in milliseconds
 
 /* Accelerometer config */
 #define CONFIG_ACCEL_SAMPLE_PERIOD 100               //!< In milliseconds

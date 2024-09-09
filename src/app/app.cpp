@@ -174,6 +174,8 @@ int app_target_decrease(void) {
     if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
         m_boost_activated = true;
         m_boost_timestamp = millis();
+    } else {
+        m_boost_activated = false;
     }
 
     /* Save new target later on when the value has been stable for long enough
