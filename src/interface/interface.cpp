@@ -39,8 +39,10 @@ static enum {
     STATE_MONITOR_ASLEEP,
     STATE_MONITOR_ADJUST,
     STATE_MENU_HOME,
-    STATE_MENU_DISPLAY_ROTATION_0,
-    STATE_MENU_DISPLAY_ROTATION_1,
+    STATE_MENU_INTERFACE_UNITS_0,
+    STATE_MENU_INTERFACE_UNITS_1,
+    STATE_MENU_INTERFACE_ROTATION_0,
+    STATE_MENU_INTERFACE_ROTATION_1,
     STATE_MENU_DISPLAY_BRIGHTNESS_0,
     STATE_MENU_DISPLAY_BRIGHTNESS_1,
 } m_sm;
@@ -353,6 +355,10 @@ int interface_task(void) {
                 break;
             }
 
+            /* Retrieve relevant settings */
+            bool fahrenheit = false;
+            settings_interface_units_get(fahrenheit);
+
             /* Display monitor page */
             m_library.clear();
             m_library.drawBitmap(0, 0, m_icon_lock, 16, 16, 1);
@@ -364,8 +370,13 @@ int interface_task(void) {
                 if (res < 0) {
                     m_library.print("err");
                 } else {
-                    m_library.printf("%03.0f", temperature_c);                                // TODO Use settings to change units
-                    m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+                    if (fahrenheit) {
+                        m_library.printf("%03.0f", temperature_c * 1.8 + 32);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                    } else {
+                        m_library.printf("%03.0f", temperature_c);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                    }
                 }
             } else {
                 m_library.print("tip");
@@ -414,6 +425,10 @@ int interface_task(void) {
                 break;
             }
 
+            /* Retrieve relevant settings */
+            bool fahrenheit = false;
+            settings_interface_units_get(fahrenheit);
+
             /* Display monitor page */
             m_library.clear();
             if (app_boost_activated_get()) {
@@ -437,8 +452,13 @@ int interface_task(void) {
                 if (res < 0) {
                     m_library.print("err");
                 } else {
-                    m_library.printf("%03.0f", temperature_c);                                // TODO Use settings to change units
-                    m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+                    if (fahrenheit) {
+                        m_library.printf("%03.0f", temperature_c * 1.8 + 32);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                    } else {
+                        m_library.printf("%03.0f", temperature_c);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                    }
                 }
             } else {
                 m_library.print("tip");
@@ -507,6 +527,10 @@ int interface_task(void) {
                 break;
             }
 
+            /* Retrieve relevant settings */
+            bool fahrenheit = false;
+            settings_interface_units_get(fahrenheit);
+
             /* Display monitor page */
             m_library.clear();
             m_library.drawBitmap(0, 0, m_icon_sleep, 16, 16, 1);
@@ -518,8 +542,13 @@ int interface_task(void) {
                 if (res < 0) {
                     m_library.print("err");
                 } else {
-                    m_library.printf("%03.0f", temperature_c);                                // TODO Use settings to change units
-                    m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+                    if (fahrenheit) {
+                        m_library.printf("%03.0f", temperature_c * 1.8 + 32);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                    } else {
+                        m_library.printf("%03.0f", temperature_c);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                    }
                 }
             } else {
                 m_library.print("tip");
@@ -582,13 +611,22 @@ int interface_task(void) {
                 break;
             }
 
+            /* Retrieve relevant settings */
+            bool fahrenheit = false;
+            settings_interface_units_get(fahrenheit);
+
             /* Display monitor page */
             m_library.clear();
             m_library.drawBitmap(0, 0, m_icon_thermometer, 16, 16, 1);
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
-            m_library.printf("%03.0f", app_target_get());                             // TODO Use settings to change units
-            m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);  // TODO Use settings to change units
+            if (fahrenheit) {
+                m_library.printf("%03.0f", app_target_get() * 1.8 + 32);
+                m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+            } else {
+                m_library.printf("%03.0f", app_target_get());
+                m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+            }
             m_library.display();
 
             /* Handle buttons */
@@ -612,11 +650,84 @@ int interface_task(void) {
         }
 
         case STATE_MENU_HOME: {
-            m_sm = STATE_MENU_DISPLAY_ROTATION_0;
+            m_sm = STATE_MENU_INTERFACE_UNITS_0;
             break;
         }
 
-        case STATE_MENU_DISPLAY_ROTATION_0: {
+        case STATE_MENU_INTERFACE_UNITS_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Units");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_INTERFACE_ROTATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_INTERFACE_UNITS_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_MENU_INTERFACE_UNITS_1: {
+
+            /* Retrieve relevant settings */
+            bool fahrenheit = false;
+            settings_interface_units_get(fahrenheit);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Units");
+            m_library.setCursor(20, 9);
+            m_library.printf("%s", fahrenheit ? "Fahrenheit" : "Celsius");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT:
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    fahrenheit = !fahrenheit;
+                    settings_interface_units_set(fahrenheit);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_INTERFACE_UNITS_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_MENU_INTERFACE_ROTATION_0: {
 
             /* Display menu page */
             m_library.clear();
@@ -631,6 +742,7 @@ int interface_task(void) {
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_INTERFACE_UNITS_0;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
@@ -638,7 +750,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    m_sm = STATE_MENU_DISPLAY_ROTATION_1;
+                    m_sm = STATE_MENU_INTERFACE_ROTATION_1;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
@@ -651,9 +763,9 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_MENU_DISPLAY_ROTATION_1: {
+        case STATE_MENU_INTERFACE_ROTATION_1: {
 
-            /* Retrieve interface orientation from settings */
+            /* Retrieve relevant settings */
             bool left_handed = false;
             res = settings_interface_rotation_get(left_handed);
 
@@ -677,7 +789,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    m_sm = STATE_MENU_DISPLAY_ROTATION_0;
+                    m_sm = STATE_MENU_INTERFACE_ROTATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
@@ -705,7 +817,7 @@ int interface_task(void) {
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT: {
-                    m_sm = STATE_MENU_DISPLAY_ROTATION_0;
+                    m_sm = STATE_MENU_INTERFACE_ROTATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
@@ -727,7 +839,7 @@ int interface_task(void) {
 
         case STATE_MENU_DISPLAY_BRIGHTNESS_1: {
 
-            /* Retrieve brightness from settings */
+            /* Retrieve relevant settings */
             int brightness = 100;
             res = settings_display_brightness_get(brightness);
 

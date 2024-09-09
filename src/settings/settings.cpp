@@ -138,7 +138,7 @@ int settings_memory_wipe(void) {
  * @param temperature_c
  * @return
  */
-int settings_temperature_get(float &temperature_c) {
+int settings_temperature_target_get(float &temperature_c) {
     int res;
 
     /* Load json document */
@@ -162,7 +162,7 @@ int settings_temperature_get(float &temperature_c) {
  * @param temperature_c
  * @return
  */
-int settings_temperature_set(const float temperature_c) {
+int settings_temperature_target_set(const float temperature_c) {
     int res;
 
     /* Update json document */
@@ -297,6 +297,51 @@ int settings_product_set(const char *const product_number, const char *const ser
     /* */
     m_doc["product"]["product_number"] = product_number;
     m_doc["product"]["serial_number"] = serial_number;
+
+    /* Save it */
+    res = m_repack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief
+ * @param[out] fahrenheit
+ * @return
+ */
+int settings_interface_units_get(bool &fahrenheit) {
+    int res;
+
+    /* Load json document */
+    res = m_unpack();
+    if (res < 0) {
+        return -1;
+    }
+
+    /* Return if found */
+    if (m_doc["interface"]["units"].is<int>() == true) {
+        fahrenheit = (m_doc["interface"]["units"] == 1);
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief
+ * @param[in] fahrenheit
+ * @return
+ */
+int settings_interface_units_set(const bool fahrenheit) {
+    int res;
+
+    /* */
+    m_doc["interface"]["units"] = fahrenheit ? 1 : 0;
 
     /* Save it */
     res = m_repack();

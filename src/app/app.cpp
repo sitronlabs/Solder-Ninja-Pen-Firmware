@@ -43,7 +43,7 @@ int app_setup(void) {
 
     /* If available use target temperature from settings */
     float temperature;
-    res = settings_temperature_get(temperature);
+    res = settings_temperature_target_get(temperature);
     if (res == 1) {
         m_target = temperature;
     }
@@ -246,9 +246,9 @@ int app_task(void) {
     /* Save tartget temperature when stable */
     if ((m_target_changed == true) && (millis() - m_target_changed_timestamp >= 500)) {
         if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
-            settings_temperature_set(CONFIG_APP_TARGET_MAX_SAFE);
+            settings_temperature_target_set(CONFIG_APP_TARGET_MAX_SAFE);
         } else {
-            settings_temperature_set(m_target);
+            settings_temperature_target_set(m_target);
         }
         m_target_changed = false;
     }
