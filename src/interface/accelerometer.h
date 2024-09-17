@@ -10,6 +10,8 @@ int accelerometer_idle_reset(void);
 int accelerometer_idle_detected_get(void);
 int accelerometer_wake_reset(void);
 int accelerometer_wake_detected_get(void);
+int accelerometer_fall_reset(void);
+int accelerometer_fall_detected_get(void);
 int accelerometer_task(void);
 
 #endif

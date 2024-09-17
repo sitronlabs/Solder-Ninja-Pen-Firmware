@@ -20,6 +20,9 @@ static bool m_idle_detected;
 /* Variables for wake detection */
 static bool m_wake_detected;
 
+/* Variables for freefall detection */
+static bool m_fall_detected;
+
 /**
  * @brief
  * @param
@@ -85,6 +88,30 @@ int accelerometer_wake_detected_get(void) {
     return m_wake_detected;
 }
 
+/**
+ * @brief
+ * @param
+ * @return
+ */
+int accelerometer_fall_reset(void) {
+    m_fall_detected = false;
+    return 0;
+}
+
+/**
+ * @brief
+ * @param
+ * @return
+ */
+int accelerometer_fall_detected_get(void) {
+    return m_fall_detected;
+}
+
+/**
+ * @brief
+ * @param
+ * @return
+ */
 int accelerometer_task(void) {
     int res;
 
@@ -166,6 +193,12 @@ int accelerometer_task(void) {
                 // log_t("Movement = %f", movement);
                 if (movement >= CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD) {
                     m_wake_detected = true;
+                }
+
+                /* Detect freefall */
+                if (movement <= CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD) {
+                    m_fall_detected = true;
+                    // log_t("Frefall!");
                 }
             }
 

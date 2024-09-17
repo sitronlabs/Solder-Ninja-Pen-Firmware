@@ -327,6 +327,7 @@ int interface_task(void) {
                 case APP_STATE_HEATING: {
                     log_d("Redirect to STATE_MONITOR_HEATING");
                     accelerometer_idle_reset();
+                    accelerometer_fall_reset();
                     m_sm = STATE_MONITOR_HEATING;
                     break;
                 }
@@ -478,7 +479,9 @@ int interface_task(void) {
             m_library.display();
 
             /* Handle accelerometer */
-            if (accelerometer_idle_detected_get()) {
+            if (accelerometer_fall_detected_get()) {
+                app_lock();
+            } else if (accelerometer_idle_detected_get()) {
                 app_sleep();
             }
 
@@ -568,7 +571,9 @@ int interface_task(void) {
             m_library.display();
 
             /* Handle accelerometer */
-            if (accelerometer_wake_detected_get()) {
+            if (accelerometer_fall_detected_get()) {
+                app_lock();
+            } else if (accelerometer_wake_detected_get()) {
                 app_wake();
             }
 
