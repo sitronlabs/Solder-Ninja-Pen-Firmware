@@ -11,9 +11,6 @@
 #include "../cfg/config.h"
 
 /* Local variables */
-static enum {
-    STATE_0_SPLASH,
-} m_sm;
 static enum app_state m_state = APP_STATE_LOCKED;
 static float m_target = 300;
 static bool m_target_changed = false;
@@ -199,29 +196,12 @@ bool app_boost_activated_get(void) {
     return m_boost_activated;
 }
 
-// int app_heating_turn_on(void) {
-//     /* Pass along */
-//     element_temperature_target_set(m_target);
-//     element_heating_enable();
-//     /* Return success */
-//     return 0;
-// }
-
-// int app_heating_turn_off(void) {
-//     /* Pass along */
-//     element_heating_disable();
-//     /* Return success */
-//     return 0;
-// }
-
-// int app_heating_enabled_get(void) {
-//     /* Return success */
-//     return 0;
-// }
-
+/**
+ * @brief
+ * @param
+ * @return
+ */
 int app_task(void) {
-
-    // App has no splash, but rather starts in the locked state
 
     /* Power negotiatior task */
     power_task();

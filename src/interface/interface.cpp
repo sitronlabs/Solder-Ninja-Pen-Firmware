@@ -127,15 +127,13 @@ int interface_setup(void) {
 int interface_task(void) {
     int res;
 
-    /* Handle buttons */
+    /* Handle buttons processing */
     buttons_task();
-
-    /* Handle display */
 
     /* Handle accelerometer */
     accelerometer_task();
 
-    /* Handle input: magnet sensor */
+    /* Handle magnet sensor */
     static enum {
         STATE_0_MAGNET_NOT_DETECTED,
         STATE_1_MAGNET_DETECTED,
@@ -167,7 +165,7 @@ int interface_task(void) {
         }
     }
 
-    /* Handle output: display */
+    /* Handle user interface */
     switch (m_sm) {
 
         case STATE_SPLASH_0: {
