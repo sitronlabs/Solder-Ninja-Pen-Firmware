@@ -41,6 +41,7 @@ void setup(void) {
     if (res < 0) {
         log_e("Failed to setup log task!");
     }
+    log_i("Hello world.");
 
     /* Setup settings */
     res = settings_setup();
