@@ -29,7 +29,7 @@
 
 /* User interface config */
 #define CONFIG_UI_SPLASH_DURATION 1000  //!< Duration of the splash screen, in milliseconds.
-#define CONFIG_UI_INFO_DURATION 1500    //!< Duration of each information screen, in milliseconds.
+#define CONFIG_UI_INFO_DURATION 2000    //!< Duration of each information screen, in milliseconds.
 #define CONFIG_UI_ADJUST_DURATION 1000  //!< Amount of time the target temperature is displayed before reverting to the monitor temperature, in milliseconds.
 
 #endif
