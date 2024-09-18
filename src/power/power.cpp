@@ -157,9 +157,6 @@ int power_setup(void) {
         log_e("Failed to setup fusb302 ic!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
-    // TODO Enable automatic retransmission
-    // TODO Flush RX buffer (is it necessary after reset???)
-    // TODO Flush TX (same question)
 
 #if R4J
     /* Setup dac for dc-dc regulation */
@@ -377,13 +374,13 @@ int power_task(void) {
             }
 
             /* Detect orientation */
-            fusb302_orientation orientation;
+            usb_typec_cc_orientation orientation;
             if (cc1 > USB_TYPEC_CC_STATUS_OPEN && cc2 == USB_TYPEC_CC_STATUS_OPEN) {
                 log_d("Type-C orientation is default.");
-                orientation = FUSB302_ORIENTATION_0;
+                orientation = USB_TYPEC_CC_ORIENTATION_NORMAL;
             } else if (cc1 == USB_TYPEC_CC_STATUS_OPEN && cc2 > USB_TYPEC_CC_STATUS_OPEN) {
                 log_d("Type-C orientation is flipped.");
-                orientation = FUSB302_ORIENTATION_1;
+                orientation = USB_TYPEC_CC_ORIENTATION_REVERSE;
             } else {
                 log_w("Invalid cc pin logic");
                 m_sm = STATE_TC_0;
@@ -677,7 +674,7 @@ int power_task(void) {
                         case USB_PD_PDO_TYPE_FIXED: {
                             double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
                             double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
-                            // log_d("Received fixed pdo %.fV %.fA", voltage, current);
+                            // log_d("Received fixed pdo %fV %fA", voltage, current);
                             double power = voltage * current;
                             if (power >= power_best) {
                                 power_best = power;
