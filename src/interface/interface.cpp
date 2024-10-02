@@ -410,6 +410,9 @@ int interface_task(void) {
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -514,6 +517,9 @@ int interface_task(void) {
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -600,6 +606,9 @@ int interface_task(void) {
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -646,6 +655,9 @@ int interface_task(void) {
                     m_timestamp = millis();
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -686,6 +698,9 @@ int interface_task(void) {
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -724,6 +739,9 @@ int interface_task(void) {
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -758,6 +776,9 @@ int interface_task(void) {
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
                     break;
                 }
             }
@@ -799,6 +820,9 @@ int interface_task(void) {
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
+                default: {
+                    break;
+                }
             }
 
             /* That's it */
@@ -832,6 +856,9 @@ int interface_task(void) {
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
                     break;
                 }
             }
@@ -882,6 +909,9 @@ int interface_task(void) {
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
                     m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
                     break;
                 }
             }
