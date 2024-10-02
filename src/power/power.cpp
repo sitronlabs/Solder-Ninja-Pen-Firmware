@@ -280,6 +280,7 @@ int power_task(void) {
         STATE_TC_0,
         STATE_TC_1,
         STATE_TC_2,
+        STATE_TC_3,
         STATE_BC_0,
         STATE_BC_1,
         STATE_BC_2,
@@ -327,30 +328,14 @@ int power_task(void) {
             /* Ensure ic is detected */
             if (m_fusb302.detect() != true) {
                 log_e("Failed to detect fusb302 ic!");
-                m_sm = STATE_TC_2;
-                break;
-            }
-
-            /* Reset internal registers */
-            res = m_fusb302.reset();
-            if (res < 0) {
-                log_e("Failed to reset fusb302 ic!");
-                m_sm = STATE_TC_2;
-                break;
-            }
-
-            /* Enable power to all internal circuitry */
-            res = m_fusb302.power_set(true);
-            if (res < 0) {
-                log_e("Failed to configure fusb302 ic!");
-                m_sm = STATE_TC_2;
+                m_sm = STATE_TC_3;
                 break;
             }
 
             /* Don't retry too many times */
             if (m_errors_tc > 5) {
-                log_e("Too many errors!");
-                m_sm = STATE_TC_2;
+                log_e("Too many tc errors!");
+                m_sm = STATE_TC_3;
                 break;
             }
 
@@ -360,6 +345,37 @@ int power_task(void) {
         }
 
         case STATE_TC_1: {
+
+            /* Reset internal registers */
+            res = m_fusb302.reset();
+            if (res < 0) {
+                log_e("Failed to reset fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_TC_2;
+            break;
+        }
+
+        case STATE_TC_2: {
+
+            /* Wait a little bit after reset */
+            if ((millis() - m_timestamp) < 15) {
+                break;
+            }
+
+            /* Enable power to all internal circuitry */
+            res = m_fusb302.power_set(true);
+            if (res < 0) {
+                log_e("Failed to configure fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
 
             /* Measure voltages on the cc pins to determine
              * 1) the orientation of the usb type-c cable
@@ -400,13 +416,13 @@ int power_task(void) {
             /* Determine current limit based on cc pin voltage */
             float current = 0.0;
             if (cc1 == USB_TYPEC_CC_STATUS_RP_3_0 || cc2 == USB_TYPEC_CC_STATUS_RP_3_0) {
-                log_i("Usb type-c src advertises 3.0A.");
+                log_i("Type-C src advertises 3.0A.");
                 current = 3.0;
             } else if (cc1 == USB_TYPEC_CC_STATUS_RP_1_5 || cc2 == USB_TYPEC_CC_STATUS_RP_1_5) {
-                log_i("Usb type-c src advertises 1.5A.");
+                log_i("Type-C src advertises 1.5A.");
                 current = 1.5;
             } else if (cc1 == USB_TYPEC_CC_STATUS_RP_DEF || cc2 == USB_TYPEC_CC_STATUS_RP_DEF) {
-                log_i("Usb type-c src advertises default current.");
+                log_i("Type-C src advertises default current.");
                 current = 0.5;
             }
 
@@ -421,11 +437,11 @@ int power_task(void) {
             m_options_add(option);
 
             /* Move on */
-            m_sm = STATE_TC_2;
+            m_sm = STATE_TC_3;
             break;
         }
 
-        case STATE_TC_2: {
+        case STATE_TC_3: {
 
             /* Move on */
             m_sm = STATE_BC_0;
@@ -443,7 +459,7 @@ int power_task(void) {
 
             /* Don't retry too many times */
             if (m_errors_bc > 5) {
-                log_e("Too many errors!");
+                log_e("Too many bc errors!");
                 m_sm = STATE_BC_5;
                 break;
             }
@@ -504,7 +520,7 @@ int power_task(void) {
             /* Wait for a device attach event */
             res = m_pi3usb9281.device_attach_wait(1000);
             if (res < 0) {
-                log_e("Failed to detect a usb device!");
+                log_w("Failed to detect a usb device, trying again...");
                 m_sm = STATE_BC_0;
                 m_errors_bc++;
                 break;
@@ -521,7 +537,7 @@ int power_task(void) {
             enum pi3usb9281c_device_type type;
             res = m_pi3usb9281.device_type_get(&type);
             if (res < 0) {
-                log_e("Failed to determine type of usb device attached!");
+                log_w("Failed to determine type of usb device attached, trying again...");
                 m_sm = STATE_BC_0;
                 m_errors_bc++;
                 break;
@@ -530,24 +546,33 @@ int power_task(void) {
             /* Determine current limit */
             float current = 0;
             switch (type) {
-                case PI3USB9281C_DEVICE_TYPE_USB_CDP:
+                case PI3USB9281C_DEVICE_TYPE_USB_CDP: {
+                    log_i("Detected usb device of type cdp.");
+                    current = 1.5;
+                    break;
+                }
                 case PI3USB9281C_DEVICE_TYPE_USB_DCP: {
+                    log_i("Detected usb device of type dcp.");
                     current = 1.5;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_1A: {
+                    log_i("Detected usb device of type 1A charger.");
                     current = 1.0;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_2A: {
+                    log_i("Detected usb device of type 2A charger.");
                     current = 2.0;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_2_4A: {
+                    log_i("Detected usb device of type 2.4A charger.");
                     current = 2.4;
                     break;
                 }
                 default: {
+                    log_i("Detected usb device of type sdp.");
                     current = 0.5;
                     break;
                 }
@@ -584,7 +609,7 @@ int power_task(void) {
 
             /* Don't retry too many times */
             if (m_errors_pd > 5) {
-                log_e("Too many errors!");
+                log_e("Too many pd errors!");
                 m_sm = STATE_QC_0;
                 break;
             }
@@ -596,10 +621,19 @@ int power_task(void) {
 
         case STATE_PD_1: {
 
-            /* Flush rx */
+            /* Flush RX fifo */
             res = m_fusb302.pd_rx_flush();
             if (res < 0) {
-                log_e("Failed to flush rx fifo!");
+                log_e("Failed to flush fusb302 rx fifo!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Flush TX fifo */
+            res = m_fusb302.pd_tx_flush();
+            if (res < 0) {
+                log_e("Failed to flush fusb302 tx fifo!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -607,15 +641,22 @@ int power_task(void) {
 
             /* Enable automatic goodcrc
              * @note Don't log starting from here as it might delay pd messages */
-            res = m_fusb302.autogoodcrc_enable(true);
+            res = m_fusb302.pd_autogoodcrc_set(true);
             if (res < 0) {
-                log_e("Failed to enable auto goodcrc!");
+                log_e("Failed to enable fusb302 auto goodcrc!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
             }
 
-            // TODO AUTO_RETRY
+            /* Enable automatic retransmission */
+            res = m_fusb302.pd_autoretry_set(3);
+            if (res < 0) {
+                log_e("Failed to enable fusb302 auto retry!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
 
             // /* Try to receive power delivery source capabilities
             //  * @note Don't log starting from here as it might delay pd messages */
@@ -659,7 +700,7 @@ int power_task(void) {
             // }
 
             /* Whatever the message, increment the message_id counter */
-            m_pd_next_message_id = (response.header >> 9) & 0b111;
+            // m_pd_next_message_id = (response.header >> 9) & 0b111;
             m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
 
             /* Wait for source capabilities message */
@@ -706,6 +747,7 @@ int power_task(void) {
                     request.object_count = 1;
                     request.objects[0] = 0;
                     request.objects[0] |= ((power_best_index + 1) << 28);
+                    request.objects[0] |= (0 << 27);  // No GiveBack support for now
                     request.objects[0] |= (1 << 25);  // USB Communications Capable
                     request.objects[0] |= (1 << 24);  // No USB Suspend
                     request.objects[0] |= (current_10ma << 10);
@@ -717,7 +759,7 @@ int power_task(void) {
                     /* Send message */
                     res = m_fusb302.pd_message_send(request);
                     if (res < 0) {
-                        log_e("Failed to request pdo!");
+                        log_e("Failed to request pdo (%d)!", res);
                         m_sm = STATE_PD_0;
                         m_errors_pd++;
                         break;
@@ -768,7 +810,7 @@ int power_task(void) {
             // }
 
             /* Whatever the message, increment the message_id counter */
-            m_pd_next_message_id = (response.header >> 9) & 0b111;
+            // m_pd_next_message_id = (response.header >> 9) & 0b111;
             m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
 
             /* Handle accept message */
@@ -829,7 +871,7 @@ int power_task(void) {
             // }
 
             /* Whatever the message, increment the message_id counter */
-            m_pd_next_message_id = (response.header >> 9) & 0b111;
+            // m_pd_next_message_id = (response.header >> 9) & 0b111;
             m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
 
             /* Handle ready message */
@@ -878,7 +920,7 @@ int power_task(void) {
 
             /* Don't retry too many times */
             if (m_errors_qc > 5) {
-                log_e("Too many errors!");
+                log_e("Too many qc errors!");
                 m_sm = STATE_QC_10;
                 break;
             }
@@ -1022,7 +1064,8 @@ int power_task(void) {
 
         case STATE_DONE: {
 
-            /* Look for incoming messages */
+            /* Look for incoming messages
+             * Otherwise, the fusb302 will stop sending goodcrc */
             usb_pd_message response;
             res = m_fusb302.pd_message_receive(response);
             if (res < 0) {
