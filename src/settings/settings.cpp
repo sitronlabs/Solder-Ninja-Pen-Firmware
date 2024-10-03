@@ -7,6 +7,7 @@
 
 /* Arduino libraries */
 #include <ArduinoJson.h>
+#include <StreamUtils.h>
 #include <m24c64.h>
 
 /* Peripherals */
@@ -64,7 +65,9 @@ static int m_repack(void) {
 
     /* Write to memory */
     m_eeprom.seek_write(0);
-    serializeMsgPack(m_doc, m_eeprom);
+    WriteBufferingStream m_eeprom_buffered(m_eeprom, 32);
+    serializeMsgPack(m_doc, m_eeprom_buffered);
+    m_eeprom_buffered.flush();
 
     /* Return success */
     return 0;
