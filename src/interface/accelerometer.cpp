@@ -13,6 +13,9 @@
 /* Peripherals */
 static lis2dh12 m_accel;
 
+/* Filter library */
+static RunningMedian m_magnitude_filter(10);
+
 /* Variables for idle detection */
 static uint32_t m_idle_time;
 static bool m_idle_detected;
@@ -169,34 +172,34 @@ int accelerometer_task(void) {
                     break;
                 }
 
-                /* Detect idle by looking at angular velocity */
-                float angle_deg = asinf(x) * 57.2958;
-                if (isfinite(angle_deg)) {
-                    static float angle_previous_deg;
-                    float angular_speed_degps = abs(angle_deg - angle_previous_deg) * (1000.0 / CONFIG_ACCEL_SAMPLE_PERIOD);
-                    // log_t("Angle %.3f -> %.3f, angular speed = %.3f deg/s", angle_previous_deg, angle_deg, angular_speed_degps);
-                    angle_previous_deg = angle_deg;
-                    if (angular_speed_degps >= CONFIG_ACCEL_IDLE_ANGULAR_SPEED_TRESHOLD) {
-                        m_idle_detected = false;
-                        m_idle_time = 0;
+                /* Compute magnitude of acceleration */
+                float magnitude = sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
+                // log_t("Magnitude = %f", magnitude);
+
+                /* Compute movement as difference between magnitude and median magnitude */
+                m_magnitude_filter.add(magnitude);
+                float movement = fabs(m_magnitude_filter.getMedian() - magnitude);
+                // log_t("magnitude = %f, median = %f, ecart = %f", magnitude, m_magnitude_filter.getMedian(), movement);
+
+                /* Detect idle */
+                if (movement >= CONFIG_ACCEL_IDLE_ACCELERATION_TRESHOLD) {
+                    m_idle_detected = false;
+                    m_idle_time = 0;
+                } else {
+                    if (m_idle_time >= CONFIG_ACCEL_IDLE_TIME) {
+                        m_idle_detected = true;
                     } else {
-                        if (m_idle_time >= CONFIG_ACCEL_IDLE_TIME) {
-                            m_idle_detected = true;
-                        } else {
-                            m_idle_time += CONFIG_ACCEL_SAMPLE_PERIOD;
-                        }
+                        m_idle_time += CONFIG_ACCEL_SAMPLE_PERIOD;
                     }
                 }
 
-                /* Detect wake by looking at sum of accelerations */
-                float movement = sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
-                // log_t("Movement = %f", movement);
+                /* Detect wake */
                 if (movement >= CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD) {
                     m_wake_detected = true;
                 }
 
                 /* Detect freefall */
-                if (movement <= CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD) {
+                if (magnitude <= CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD) {
                     m_fall_detected = true;
                     // log_t("Frefall!");
                 }
@@ -230,8 +233,8 @@ int accelerometer_task(void) {
             //     m_accel.acceleration_read(x, y, z);
             //     float movement = abs(1 - sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2)));
             // 	if(movement > 0.2
-            //     m_movement_filter.add(movement);
-            //     log_t("Movement = %f, Median = %f", movement, m_movement_filter.getMedian());
+            //     m_magnitude_filter.add(movement);
+            //     log_t("Movement = %f, Median = %f", movement, m_magnitude_filter.getMedian());
             // }
 
             // /* Temp */

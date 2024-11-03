@@ -10,9 +10,9 @@
 /* Accelerometer config */
 #define CONFIG_ACCEL_SAMPLE_PERIOD 100               //!< In milliseconds
 #define CONFIG_ACCEL_IDLE_TIME 180000                //!< In milliseconds
-#define CONFIG_ACCEL_IDLE_ANGULAR_SPEED_TRESHOLD 40  //!< In degrees per second.
-#define CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD 2    //!< In g. Has to be lower than the configured full scale.
-#define CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD 0.3  //!< In g.
+#define CONFIG_ACCEL_IDLE_ACCELERATION_TRESHOLD 0.1  //!< In g, relative to mediam magnitude.
+#define CONFIG_ACCEL_WAKE_ACCELERATION_TRESHOLD 1.0  //!< In g, relative to mediam magnitude.. Has to be lower than the configured full scale.
+#define CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD 0.3  //!< In g, absolute.
 
 /* Buttons config */
 #define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30                    //!<
