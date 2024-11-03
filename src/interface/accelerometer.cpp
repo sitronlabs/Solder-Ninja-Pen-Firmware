@@ -122,10 +122,6 @@ int accelerometer_task(void) {
     static enum {
         STATE_0,
         STATE_1,
-        STATE_2,
-        STATE_3,
-        STATE_4,
-        STATE_5,
         STATE_ERROR,
     } m_sm;
     switch (m_sm) {
@@ -251,14 +247,6 @@ int accelerometer_task(void) {
             //     m_accel.register_read(LIS2DH12_REGISTER_INT2_SRC, reg_int2_src);
             //     log_t("0x%02X 0x%02X, %d, %d", reg_int1_src, reg_int2_src, digitalRead(12), digitalRead(13));
             // }
-            break;
-        }
-
-        case STATE_2: {
-            break;
-        }
-
-        case STATE_3: {
             break;
         }
 
