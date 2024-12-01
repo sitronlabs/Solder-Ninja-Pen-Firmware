@@ -367,6 +367,15 @@ int power_task(void) {
                 break;
             }
 
+            /* Ensure pulldown resistors are enabled */
+            res = m_fusb302.cc_pull_down();
+            if (res < 0) {
+                log_e("Failed to configure fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
             /* Measure voltages on the cc pins to determine
              * 1) the orientation of the usb type-c cable
              * 2) the current limit reported by the dfp */
