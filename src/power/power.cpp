@@ -262,8 +262,8 @@ int power_task(void) {
     static uint8_t m_errors_pd;
     static bool m_dcp_detected;
     static uint8_t m_pd_next_message_id;
-    static double m_pd_voltage;
-    static double m_pd_current;
+    static float m_pd_voltage;
+    static float m_pd_current;
     static uint32_t m_timestamp;
     static enum {
         STATE_IDLE,
@@ -420,8 +420,8 @@ int power_task(void) {
             struct power_option option = {
                 .provider = POWER_PROVIDER_USB_TC,
                 .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
-                .voltage_min = 5.0,
-                .voltage_max = 5.0,
+                .voltage_min = 5.0f,
+                .voltage_max = 5.0f,
                 .current_max = current,
             };
             m_options_add(option);
@@ -538,32 +538,32 @@ int power_task(void) {
             switch (type) {
                 case PI3USB9281C_DEVICE_TYPE_USB_CDP: {
                     log_i("Detected usb device of type cdp.");
-                    current = 1.5;
+                    current = 1.5f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_USB_DCP: {
                     log_i("Detected usb device of type dcp.");
-                    current = 1.5;
+                    current = 1.5f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_1A: {
                     log_i("Detected usb device of type 1A charger.");
-                    current = 1.0;
+                    current = 1.0f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_2A: {
                     log_i("Detected usb device of type 2A charger.");
-                    current = 2.0;
+                    current = 2.0f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_2_4A: {
                     log_i("Detected usb device of type 2.4A charger.");
-                    current = 2.4;
+                    current = 2.4f;
                     break;
                 }
                 default: {
                     log_i("Detected usb device of type sdp.");
-                    current = 0.5;
+                    current = 0.5f;
                     break;
                 }
             }
@@ -572,8 +572,8 @@ int power_task(void) {
             struct power_option option = {
                 .provider = POWER_PROVIDER_USB_BC,
                 .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
-                .voltage_min = 5.0,
-                .voltage_max = 5.0,
+                .voltage_min = 5.0f,
+                .voltage_max = 5.0f,
                 .current_max = current,
             };
             m_options_add(option);
