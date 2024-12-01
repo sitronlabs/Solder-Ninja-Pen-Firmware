@@ -26,9 +26,6 @@ static struct {
     struct power_option option;
 } m_options[POWER_OPTIONS_LIMIT];
 
-/* Power contract, an index within the power options */
-static unsigned int m_contract;
-
 /* Other local variables */
 static int m_qc_dn_h_pin = 16;
 static int m_qc_dn_l_pin = 17;
@@ -222,13 +219,6 @@ int power_contract_get(struct power_option &contract) {
     } else {
         return -1;
     }
-
-    // if (m_options[m_contract].assigned == true) {
-    //     contract = m_options[m_contract].option;
-    //     return 0;
-    // } else {
-    //     return -1;
-    // }
 }
 
 /**
