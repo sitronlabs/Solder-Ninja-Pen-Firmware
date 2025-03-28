@@ -698,10 +698,6 @@ int power_task(void) {
             //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
             // }
 
-            /* Whatever the message, increment the message_id counter */
-            // m_pd_next_message_id = (response.header >> 9) & 0b111;
-            m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
-
             /* Wait for source capabilities message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
 
@@ -764,6 +760,10 @@ int power_task(void) {
                         break;
                     }
 
+                    /* Increment message id
+                     * @todo Ideally wait for goodcrc */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+
                     /* Move on */
                     m_timestamp = millis();
                     m_sm = STATE_PD_3;
@@ -807,10 +807,6 @@ int power_task(void) {
             // for (unsigned int i = 0; i < response.object_count; i++) {
             //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
             // }
-
-            /* Whatever the message, increment the message_id counter */
-            // m_pd_next_message_id = (response.header >> 9) & 0b111;
-            m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
 
             /* Handle accept message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT) {
@@ -868,10 +864,6 @@ int power_task(void) {
             // for (unsigned int i = 0; i < response.object_count; i++) {
             //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
             // }
-
-            /* Whatever the message, increment the message_id counter */
-            // m_pd_next_message_id = (response.header >> 9) & 0b111;
-            m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
 
             /* Handle ready message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
