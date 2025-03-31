@@ -657,8 +657,7 @@ int power_task(void) {
                 break;
             }
 
-            // /* Try to receive power delivery source capabilities
-            //  * @note Don't log starting from here as it might delay pd messages */
+            // /* Try to receive power delivery source capabilities */
             // static struct usb_pd_pdo pdo[7];
             // res = usb_pd_source_capabilities_list(0, &pdo[0], sizeof(pdo) / sizeof(struct usb_pd_pdo));
             // if (res < 0) {
@@ -693,10 +692,10 @@ int power_task(void) {
             }
 
             /* Log */
-            // log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
-            // for (unsigned int i = 0; i < response.object_count; i++) {
-            //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
-            // }
+            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            for (unsigned int i = 0; i < response.object_count; i++) {
+                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+            }
 
             /* Wait for source capabilities message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
@@ -710,7 +709,7 @@ int power_task(void) {
                         case USB_PD_PDO_TYPE_FIXED: {
                             double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
                             double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
-                            // log_d("Received fixed pdo %fV %fA", voltage, current);
+                            log_d("Received fixed pdo %fV %fA", voltage, current);
                             double power = voltage * current;
                             if (power >= power_best) {
                                 power_best = power;
@@ -722,7 +721,7 @@ int power_task(void) {
                         }
 
                         default: {
-                            // log_w("Received unsupported pdo.");
+                            log_w("Received unsupported pdo.");
                             break;
                         }
                     }
@@ -749,7 +748,7 @@ int power_task(void) {
                     request.objects[0] |= (current_10ma << 0);
 
                     /* Log */
-                    // log_d("Requesting pdo at index %u", power_best_index);
+                    log_d("Requesting pdo at index %u", power_best_index);
 
                     /* Send message */
                     res = m_fusb302.pd_message_send(request);
@@ -769,6 +768,11 @@ int power_task(void) {
                     m_sm = STATE_PD_3;
                     break;
                 }
+            }
+
+            /* Handle other messages */
+            else {
+                log_w("Unexpected message (0).");
             }
 
             /* Otherwise stay in this state
@@ -802,11 +806,11 @@ int power_task(void) {
                 break;
             }
 
-            // /* Log */
-            // log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
-            // for (unsigned int i = 0; i < response.object_count; i++) {
-            //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
-            // }
+            /* Log */
+            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            for (unsigned int i = 0; i < response.object_count; i++) {
+                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+            }
 
             /* Handle accept message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT) {
@@ -828,7 +832,7 @@ int power_task(void) {
 
             /* Handle other messages */
             else {
-                log_w("Unexpected message.");
+                log_w("Unexpected message (1).");
             }
 
             /* Otherwise stay in this state */
@@ -859,11 +863,11 @@ int power_task(void) {
                 break;
             }
 
-            // /* Log */
-            // log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
-            // for (unsigned int i = 0; i < response.object_count; i++) {
-            //     log_i(" - Object %u=0x%08X", i, response.objects[i]);
-            // }
+            /* Log */
+            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            for (unsigned int i = 0; i < response.object_count; i++) {
+                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+            }
 
             /* Handle ready message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
@@ -888,7 +892,7 @@ int power_task(void) {
 
             /* Handle other messages */
             else {
-                log_w("Unexpected message.");
+                log_w("Unexpected message (2).");
             }
 
             /* Otherwise stay in this state */
@@ -1066,6 +1070,12 @@ int power_task(void) {
                 break;
             } else if (res == 0) {
                 break;
+            }
+
+            /* Log */
+            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            for (unsigned int i = 0; i < response.object_count; i++) {
+                log_i(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
             /* Do nothing

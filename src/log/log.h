@@ -34,4 +34,7 @@ int log_write(const enum log_level level, const char* const file, const unsigned
 #define log_w(...) log_write(LOG_LEVEL_WARNING, __FILE__, __LINE__, __VA_ARGS__)
 #define log_e(...) log_write(LOG_LEVEL_ERROR, __FILE__, __LINE__, __VA_ARGS__)
 
+/* Task */
+int log_task(void);
+
 #endif
