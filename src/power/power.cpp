@@ -620,10 +620,21 @@ int power_task(void) {
 
         case STATE_PD_1: {
 
-            /* Flush RX fifo */
-            res = m_fusb302.pd_rx_flush();
+            /* Enable automatic retransmission */
+            res = m_fusb302.pd_autoretry_set(3);
             if (res < 0) {
-                log_e("Failed to flush fusb302 rx fifo!");
+                log_e("Failed to enable fusb302 auto retry!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Enable automatic goodcrc
+             * @note Starting from here, ensure the firmware doesn't stall the processing of pd messages that needs to happen in roughly 10ms */
+            log_t("autogoodcrc_enable");
+            res = m_fusb302.pd_autogoodcrc_set(true);
+            if (res < 0) {
+                log_e("Failed to enable fusb302 auto goodcrc!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -638,20 +649,19 @@ int power_task(void) {
                 break;
             }
 
-            /* Enable automatic goodcrc
-             * @note Don't log starting from here as it might delay pd messages */
-            res = m_fusb302.pd_autogoodcrc_set(true);
+            /* Flush RX fifo */
+            res = m_fusb302.pd_rx_flush();
             if (res < 0) {
-                log_e("Failed to enable fusb302 auto goodcrc!");
+                log_e("Failed to flush fusb302 rx fifo!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
             }
 
-            /* Enable automatic retransmission */
-            res = m_fusb302.pd_autoretry_set(3);
+            /* Reset PD logic */
+            res = m_fusb302.pd_reset();
             if (res < 0) {
-                log_e("Failed to enable fusb302 auto retry!");
+                log_e("Failed to reset fusb302 pd logic!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -735,7 +745,7 @@ int power_task(void) {
                     request.address = 0;  // ?
                     request.header = 0;
                     request.header |= (m_pd_next_message_id & 0b111) << 9;
-                    request.header |= (USB_PD_PROTOCOL_REVISION_3_0 << 6);
+                    request.header |= (USB_PD_PROTOCOL_REVISION_2_0 << 6);
                     request.header |= USB_PD_MESSAGE_TYPE_DATA_REQUEST;
                     uint16_t current_10ma = m_pd_current * 100;
                     request.object_count = 1;
@@ -812,8 +822,13 @@ int power_task(void) {
                 log_i(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
+            /* Handle good crc */
+            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
+                log_i("Good crc.");
+            }
+
             /* Handle accept message */
-            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT) {
+            else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT) {
                 log_i("Pdo request accepted.");
 
                 /* Move on */
