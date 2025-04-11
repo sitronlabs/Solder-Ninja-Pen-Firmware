@@ -1073,6 +1073,7 @@ int power_task(void) {
         }
 
         case STATE_DONE: {
+            /* @todo Maybe monitor voltage in case of pd / hvdcp */
 
             /* Look for incoming messages
              * Otherwise, the fusb302 will stop sending goodcrc */
@@ -1093,8 +1094,85 @@ int power_task(void) {
                 log_i(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
-            /* Do nothing
-             * @todo Maybe monitor voltage in case of pd / hvdcp */
+            /* Wait for source capabilities message */
+            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
+
+                /* Parse each pdo */
+                double power_best = 0;
+                int8_t power_best_index = -1;
+                for (uint8_t i = 0; i < response.object_count; i++) {
+                    switch (response.objects[i] >> 30U) {
+
+                        case USB_PD_PDO_TYPE_FIXED: {
+                            double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
+                            double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
+                            log_d("Received fixed pdo %fV %fA", voltage, current);
+                            double power = voltage * current;
+                            if (power >= power_best) {
+                                power_best = power;
+                                power_best_index = i;
+                                m_pd_current = current;
+                                m_pd_voltage = voltage;
+                            }
+                            break;
+                        }
+
+                        default: {
+                            log_w("Received unsupported pdo.");
+                            break;
+                        }
+                    }
+                }
+
+                /* Request the most interesting pdo */
+                if (power_best_index >= 0) {
+
+                    /* Build message */
+                    struct usb_pd_message request = {0};
+                    request.address = 0;  // ?
+                    request.header = 0;
+                    request.header |= (m_pd_next_message_id & 0b111) << 9;
+                    request.header |= (USB_PD_PROTOCOL_REVISION_2_0 << 6);
+                    request.header |= USB_PD_MESSAGE_TYPE_DATA_REQUEST;
+                    uint16_t current_10ma = m_pd_current * 100;
+                    request.object_count = 1;
+                    request.objects[0] = 0;
+                    request.objects[0] |= ((power_best_index + 1) << 28);
+                    request.objects[0] |= (0 << 27);  // No GiveBack support for now
+                    request.objects[0] |= (1 << 25);  // USB Communications Capable
+                    request.objects[0] |= (1 << 24);  // No USB Suspend
+                    request.objects[0] |= (current_10ma << 10);
+                    request.objects[0] |= (current_10ma << 0);
+
+                    /* Log */
+                    log_d("Requesting pdo at index %u", power_best_index);
+
+                    /* Send message */
+                    res = m_fusb302.pd_message_send(request);
+                    if (res < 0) {
+                        log_e("Failed to request pdo (%d)!", res);
+                        m_sm = STATE_PD_0;
+                        m_errors_pd++;
+                        break;
+                    }
+
+                    /* Increment message id
+                     * @todo Ideally wait for goodcrc */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+
+                    /* Move on */
+                    m_timestamp = millis();
+                    m_sm = STATE_PD_3;
+                    break;
+                }
+            }
+
+            /* Handle other messages */
+            else {
+                log_w("Unexpected message (3).");
+            }
+
+            /* Stay here */
             break;
         }
 
