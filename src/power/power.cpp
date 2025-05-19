@@ -54,7 +54,7 @@ static int m_adjust_buck(const float power_limit) {
         float vout = vref * (1 + rtop / rbot) + (vref - vdac) * (rtop / rdac);
 
         /* Voltage for setting matches desired one */
-        if (vout <= buck_voltage) {
+        if ((vout <= buck_voltage) || (i == 255)) {
 
             /* Update dac */
             log_d("Using vdac %.2fV for vout %.2fV.", vdac, vout);
