@@ -706,10 +706,12 @@ int power_task(void) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
-            /* Wait for source capabilities message */
+            /* Handle source capabilities message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
 
-                /* Parse each pdo */
+                /* Parse each pdo looking for the most interesting one
+                 * For now we only handle fixed pdos
+                 * Ideally we want to find a pdo that gives us 45W with a voltage of less than 17V, but we can go up to 20V if needed */
                 double power_best = 0;
                 int8_t power_best_index = -1;
                 for (uint8_t i = 0; i < response.object_count; i++) {
@@ -718,13 +720,23 @@ int power_task(void) {
                         case USB_PD_PDO_TYPE_FIXED: {
                             double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
                             double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
+                            double power_max = voltage * current;
+                            double power_usable = power_max > 45 ? 45 : power_max;
                             log_i("Received fixed pdo %fV %fA", voltage, current);
-                            double power = voltage * current;
-                            if (power >= power_best) {
-                                power_best = power;
-                                power_best_index = i;
-                                m_pd_current = current;
-                                m_pd_voltage = voltage;
+                            if (voltage <= 17) {
+                                if (power_usable >= power_best) {
+                                    power_best = power_usable;
+                                    power_best_index = i;
+                                    m_pd_current = power_usable / voltage;
+                                    m_pd_voltage = voltage;
+                                }
+                            } else if (voltage <= 20) {
+                                if (power_usable > power_best) {
+                                    power_best = power_usable;
+                                    power_best_index = i;
+                                    m_pd_current = power_usable / voltage;
+                                    m_pd_voltage = voltage;
+                                }
                             }
                             break;
                         }
@@ -1093,7 +1105,7 @@ int power_task(void) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
-            /* Wait for source capabilities message */
+            /* Handle source capabilities message as some chargers will send another source capabilities for some reason */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
 
                 /* Parse each pdo */
@@ -1105,16 +1117,28 @@ int power_task(void) {
                         case USB_PD_PDO_TYPE_FIXED: {
                             double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
                             double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
-                            log_d("Received fixed pdo %fV %fA", voltage, current);
-                            double power = voltage * current;
-                            if (power >= power_best) {
-                                power_best = power;
-                                power_best_index = i;
-                                m_pd_current = current;
-                                m_pd_voltage = voltage;
+                            double power_max = voltage * current;
+                            double power_usable = power_max > 45 ? 45 : power_max;
+                            log_i("Received fixed pdo %fV %fA", voltage, current);
+                            if (voltage <= 17) {
+                                if (power_usable >= power_best) {
+                                    power_best = power_usable;
+                                    power_best_index = i;
+                                    m_pd_current = power_usable / voltage;
+                                    m_pd_voltage = voltage;
+                                }
+                            } else if (voltage <= 20) {
+                                if (power_usable > power_best) {
+                                    power_best = power_usable;
+                                    power_best_index = i;
+                                    m_pd_current = power_usable / voltage;
+                                    m_pd_voltage = voltage;
+                                }
                             }
                             break;
                         }
+
+                            // TODO Add support for other pdo types
 
                         default: {
                             log_w("Received unsupported pdo.");
