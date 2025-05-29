@@ -497,7 +497,7 @@ int power_task(void) {
             /* Reset ic which will automatically perform a new detection */
             res = m_pi3usb9281.reset();
             if (res < 0) {
-                log_e("Failed to reset ic!");
+                log_e("Failed to reset pi3usb9281 ic!");
                 m_sm = STATE_BC_0;
                 m_errors_bc++;
                 break;
@@ -631,7 +631,6 @@ int power_task(void) {
 
             /* Enable automatic goodcrc
              * @note Starting from here, ensure the firmware doesn't stall the processing of pd messages that needs to happen in roughly 10ms */
-            log_t("autogoodcrc_enable");
             res = m_fusb302.pd_autogoodcrc_set(true);
             if (res < 0) {
                 log_e("Failed to enable fusb302 auto goodcrc!");
@@ -702,9 +701,9 @@ int power_task(void) {
             }
 
             /* Log */
-            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
-                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+                log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
             /* Wait for source capabilities message */
@@ -719,7 +718,7 @@ int power_task(void) {
                         case USB_PD_PDO_TYPE_FIXED: {
                             double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
                             double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
-                            log_d("Received fixed pdo %fV %fA", voltage, current);
+                            log_i("Received fixed pdo %fV %fA", voltage, current);
                             double power = voltage * current;
                             if (power >= power_best) {
                                 power_best = power;
@@ -758,7 +757,7 @@ int power_task(void) {
                     request.objects[0] |= (current_10ma << 0);
 
                     /* Log */
-                    log_d("Requesting pdo at index %u", power_best_index);
+                    log_i("Requesting pdo at index %u", power_best_index);
 
                     /* Send message */
                     res = m_fusb302.pd_message_send(request);
@@ -817,14 +816,14 @@ int power_task(void) {
             }
 
             /* Log */
-            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
-                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+                log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
             /* Handle good crc */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
-                log_i("Good crc.");
+                log_d("Good crc.");
             }
 
             /* Handle accept message */
@@ -839,7 +838,7 @@ int power_task(void) {
 
             /* Handle reject message */
             else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_REJECT) {
-                log_e("Pdo request rejected.");
+                log_w("Pdo request rejected.");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -879,16 +878,16 @@ int power_task(void) {
             }
 
             /* Log */
-            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
-                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+                log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
             /* Handle ready message */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
 
                 /* Log */
-                log_d("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
+                log_i("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
 
                 /* Add power option */
                 struct power_option option = {
@@ -1089,9 +1088,9 @@ int power_task(void) {
             }
 
             /* Log */
-            log_i("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
-                log_i(" - Object %u=0x%08X", i, response.objects[i]);
+                log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
             /* Wait for source capabilities message */
