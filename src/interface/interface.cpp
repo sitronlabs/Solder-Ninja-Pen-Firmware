@@ -17,6 +17,11 @@
 #include <Wire.h>
 #include <ssd1306.h>
 
+#if R8A
+/* Pico libraries */
+#include <pico/bootrom.h>
+#endif
+
 /* C/C++ libraries */
 #include <stdint.h>
 
@@ -45,6 +50,7 @@ static enum {
     STATE_MENU_INTERFACE_ROTATION_1,
     STATE_MENU_DISPLAY_BRIGHTNESS_0,
     STATE_MENU_DISPLAY_BRIGHTNESS_1,
+    STATE_MENU_UPDATE_0,
 } m_sm;
 
 /* Icon bitmaps */
@@ -59,6 +65,7 @@ const uint8_t m_icon_degrees_f[32] = {0x00, 0x00, 0xE0, 0x00, 0xA0, 0x00, 0xE0, 
 const uint8_t m_icon_settings[32] = {0x00, 0x00, 0x00, 0x00, 0x3f, 0xf8, 0x40, 0x04, 0x49, 0x24, 0x4b, 0xa4, 0x49, 0x24, 0x49, 0x24, 0x49, 0x24, 0x5d, 0x24, 0x49, 0x74, 0x49, 0x24, 0x40, 0x04, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00};
 const uint8_t m_icon_product_information[32] = {0x00, 0x00, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x80, 0x02, 0x80, 0x02, 0x00, 0x00, 0xea, 0xba, 0xaa, 0xaa, 0xaa, 0xaa, 0xea, 0xba, 0x00, 0x00};
 const uint8_t m_icon_firmware_version[32] = {0x00, 0x00, 0x1c, 0x38, 0x22, 0x44, 0x22, 0x44, 0x22, 0x44, 0x1c, 0x38, 0x08, 0x10, 0x08, 0xe0, 0x0f, 0x00, 0x08, 0x00, 0x1c, 0x00, 0x22, 0x00, 0x22, 0x00, 0x22, 0x00, 0x1c, 0x00, 0x00, 0x00};
+const uint8_t m_icon_firmware_update[32] = {0x00, 0x00, 0x02, 0x40, 0x3f, 0xf8, 0x40, 0x04, 0x41, 0x04, 0x41, 0x04, 0xc1, 0x06, 0x41, 0x04, 0x41, 0x04, 0xc5, 0x46, 0x43, 0x84, 0x41, 0x04, 0x40, 0x04, 0x3f, 0xf8, 0x02, 0x40, 0x00, 0x00};
 
 /**
  * @return 0 in case of success, or a negative error code otherwise, in particular:
@@ -850,6 +857,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_UPDATE_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
@@ -918,9 +926,49 @@ int interface_task(void) {
                 }
             }
 
+            /* That's it */
             break;
         }
 
+        case STATE_MENU_UPDATE_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, m_icon_firmware_update, 16, 16, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Firm. update");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_DISPLAY_BRIGHTNESS_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+#if R8A
+                    reset_usb_boot(0, 0);
+#endif
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
         default: {
             log_e("Unexpected state!");
             m_sm = STATE_SPLASH_0;
