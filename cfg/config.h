@@ -25,6 +25,13 @@
 /* Orders config */
 #define CONFIG_COMMAND_LENGTH_LIMIT 256  //!<
 
+/* Tip config */
+#define CONFIG_TIP_CYCLE_TIME_LIMIT 1000  //!< Maximum amount of time that a measuring plus heating cycle should take (in milliseconds).
+#define CONFIG_TIP_COEFFICIENT_C 466      //!< Specific heatt capacity of the heating element (in J / (kg * K)).
+#define CONFIG_TIP_COEFFICIENT_M 0.002    //!< Mass of the heating element (in kg).
+#define CONFIG_TIP_DEBOUNCE_TIME 100      //!< Amount of time to wait after a tip has been inserted (in milliseconds).
+#define CONFIG_TIP_READ_PERIOD 35         //!< Period at which the temperature should be read (in milliseconds).
+
 /* User interface config */
 #define CONFIG_UI_SPLASH_DURATION 1500  //!< Duration of the splash screen, in milliseconds.
 #define CONFIG_UI_INFO_DURATION 1500    //!< Duration of each information screen, in milliseconds.

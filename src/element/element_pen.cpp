@@ -14,9 +14,6 @@
 
 /* Config */
 #include "../cfg/config.h"
-#define TIP_CYCLE_TIME_LIMIT 1000  //!< Maximum amount of time that a measuring plus heating cycle should take (in milliseconds).
-#define TIP_COEFFICIENT_C 466      //!< Specific heatt capacity of the heating element (in J / (kg * K)).
-#define TIP_COEFFICIENT_M 0.002    //!< Mass of the heating element (in kg).
 
 /* Peripherals */
 static max31855 m_thermocouple_afe;
@@ -32,7 +29,7 @@ static uint32_t m_temperature_filter_last_addition;
 static double m_pid_input = 0;
 static double m_pid_target = 0;
 static double m_pid_output = 0;
-static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, TIP_COEFFICIENT_C *TIP_COEFFICIENT_M, 0, 0, P_ON_E, DIRECT);
+static PID m_pid(&m_pid_input, &m_pid_output, &m_pid_target, CONFIG_TIP_COEFFICIENT_C *CONFIG_TIP_COEFFICIENT_M, 0, 0, P_ON_E, DIRECT);
 
 /* Other local variables */
 static float m_power_limit;
@@ -118,7 +115,7 @@ int element_temperature_measured_get(float &temperature_c) {
 int element_temperature_target_set(const float temperature_c) {
 
     /* Ensure temperature is within bounds */
-    if (temperature_c <= 0 || temperature_c > 400) {
+    if ((temperature_c <= CONFIG_APP_TARGET_MIN) || (temperature_c > CONFIG_APP_TARGET_MAX_BOOST)) {
         return -1;
     }
 
@@ -208,7 +205,7 @@ int element_task(void) {
         case STATE_1_DEBOUNCE: {
 
             /* Wait a little bit after insertion */
-            if (millis() - m_timestamp_tip_connected < 100) {
+            if ((millis() - m_timestamp_tip_connected) < CONFIG_TIP_DEBOUNCE_TIME) {
                 break;
             }
 
@@ -240,7 +237,7 @@ int element_task(void) {
         case STATE_4_READ: {
 
             /* Don't read more often than half the sample rate of the afe */
-            if (millis() - m_timestamp_temperature_read < 35) {
+            if ((millis() - m_timestamp_temperature_read) < CONFIG_TIP_READ_PERIOD) {
                 break;
             }
 
@@ -311,13 +308,13 @@ int element_task(void) {
 
             /* Ensure we have still time to heat in this cycle
              * which might no ne the case if we had to retry reading the temperature too many times */
-            if ((millis() - m_timestamp_cycle_start) >= TIP_CYCLE_TIME_LIMIT) {
+            if ((millis() - m_timestamp_cycle_start) >= CONFIG_TIP_CYCLE_TIME_LIMIT) {
                 m_sm = STATE_3_START;
                 break;
             }
 
             /* Compute maximum amount of energy we can use this cycle */
-            float energy_limit = ((TIP_CYCLE_TIME_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
+            float energy_limit = ((CONFIG_TIP_CYCLE_TIME_LIMIT - (millis() - m_timestamp_cycle_start)) / 1000.0) * m_power_limit;
 
             /* Compute amount of energy needed this cycle
              * Note, we are constantly readjusting the sample time of the pid which is probably not ideal as it will lead to imprecision over time, but it's ok for now */
@@ -331,8 +328,8 @@ int element_task(void) {
 
             /* Convert back energy into time and cap time to not exceed the cycle */
             m_heating_duration = 1000.0 * (m_pid_output / m_power_limit);
-            if (m_heating_duration > TIP_CYCLE_TIME_LIMIT) {
-                m_heating_duration = TIP_CYCLE_TIME_LIMIT;
+            if (m_heating_duration > CONFIG_TIP_CYCLE_TIME_LIMIT) {
+                m_heating_duration = CONFIG_TIP_CYCLE_TIME_LIMIT;
             }
 
             /* Log */
@@ -362,7 +359,7 @@ int element_task(void) {
             /* Compute an estimate of the temperature while we are heating */
             uint32_t time_ellapsed = millis() - m_timestamp_temperature_read;
             float energy = m_power_limit * (time_ellapsed / 1000.0);
-            float temperature_increase = energy / (TIP_COEFFICIENT_M * TIP_COEFFICIENT_C);
+            float temperature_increase = energy / (CONFIG_TIP_COEFFICIENT_M * CONFIG_TIP_COEFFICIENT_C);
             float temperature_estimate = m_temperature_measured_c + temperature_increase;
 
             /* Add the value to the running filter */
