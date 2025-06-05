@@ -194,7 +194,7 @@ int element_task(void) {
             }
 
             /* Wait for tip to be connected */
-            if (is_shorted_vcc == true || is_open == true) {
+            if ((is_shorted_vcc == true) || (is_open == true)) {
                 m_sm = STATE_0_DISCONNECTED;
                 break;
             }
@@ -257,7 +257,7 @@ int element_task(void) {
             }
 
             /* Ensure tip is connected */
-            if (is_shorted_vcc == true || is_open == true) {
+            if ((is_shorted_vcc == true) || (is_open == true)) {
                 m_sm = STATE_0_DISCONNECTED;
                 break;
             }
@@ -271,20 +271,21 @@ int element_task(void) {
 
             /* Discard abnormal values, because temperature readings:
              * 1) are not accurate right after heating,
-             * 1) can be affected by electrically noisy environments */
-            if (temperature_thermocouple_c < 0 || temperature_thermocouple_c > 500) {
+             * 1) can be affected by electrically noisy environments
+             * Note, this could be improved by rather looking at abnormal variations (sudden jumps from the running average) */
+            if ((temperature_thermocouple_c < 0) || (temperature_thermocouple_c > 500)) {
                 // log_t("Read %4.0f invalid", temperature_thermocouple_c);
                 break;
             }
 
-            /* Improve low temperature accuracy */
+            /* Improve low temperature accuracy by averaging with the internal temperature */
             if ((temperature_thermocouple_c < 30) && (temperature_thermocouple_c < temperature_internal_c)) {
                 temperature_thermocouple_c = (temperature_thermocouple_c + temperature_internal_c) / 2.0;
             }
 
-            // /* If needed, compute the dtemperature/denergy to replace the default one */
+            // /* To improve accuracy of estimated temperature when heating, we could compute the dtemperature/denergy
+            //  * But for now the default one seems to work pretty well, so let's not overcomplicate things. */
             // if (m_dt_de_available == false ) {
-            // TODO
             // }
 
             /* Save the value we just read */
@@ -308,7 +309,8 @@ int element_task(void) {
                 break;
             }
 
-            /* Ensure we have still time to heat in this cycle */
+            /* Ensure we have still time to heat in this cycle
+             * which might no ne the case if we had to retry reading the temperature too many times */
             if ((millis() - m_timestamp_cycle_start) >= TIP_CYCLE_TIME_LIMIT) {
                 m_sm = STATE_3_START;
                 break;
@@ -327,7 +329,7 @@ int element_task(void) {
             m_pid.Compute();
             m_timestamp_pid_computed = millis();
 
-            /* Convert back energy into time */
+            /* Convert back energy into time and cap time to not exceed the cycle */
             m_heating_duration = 1000.0 * (m_pid_output / m_power_limit);
             if (m_heating_duration > TIP_CYCLE_TIME_LIMIT) {
                 m_heating_duration = TIP_CYCLE_TIME_LIMIT;
@@ -364,7 +366,7 @@ int element_task(void) {
             float temperature_estimate = m_temperature_measured_c + temperature_increase;
 
             /* Add the value to the running filter */
-            if (millis() - m_temperature_filter_last_addition >= 100) {
+            if ((millis() - m_temperature_filter_last_addition) >= 100) {
                 m_temperature_filter.add(temperature_estimate);
                 m_temperature_filter_last_addition = millis();
             }
@@ -388,7 +390,7 @@ int element_task(void) {
         }
 
         case STATE_ERROR: {
-            // Ensure heating is disabled and wait a bit before retrying
+            // TODO Ensure heating is disabled and wait a bit before retrying?
             break;
         }
     }
