@@ -31,6 +31,7 @@
 #define CONFIG_TIP_COEFFICIENT_M 0.002    //!< Mass of the heating element (in kg).
 #define CONFIG_TIP_DEBOUNCE_TIME 100      //!< Amount of time to wait after a tip has been inserted (in milliseconds).
 #define CONFIG_TIP_READ_PERIOD 35         //!< Period at which the temperature should be read (in milliseconds).
+#define CONFIG_TIP_READ_TIMEOUT 2000      //!< Maximum time after which no valid temperature readins will lead to considering the tip is disconnected (in milliseconds).
 
 /* User interface config */
 #define CONFIG_UI_SPLASH_DURATION 1500  //!< Duration of the splash screen, in milliseconds.

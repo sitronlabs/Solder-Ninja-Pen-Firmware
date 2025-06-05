@@ -259,9 +259,6 @@ int element_task(void) {
                 break;
             }
 
-            /* Report tip as connected */
-            m_element_connected = true;
-
             /* Compensate temperature,
              * probably because we got the type of thermocouple wrong */
             temperature_thermocouple_c = 2.3482 * temperature_thermocouple_c - 47.426;
@@ -272,6 +269,13 @@ int element_task(void) {
              * Note, this could be improved by rather looking at abnormal variations (sudden jumps from the running average) */
             if ((temperature_thermocouple_c < 0) || (temperature_thermocouple_c > 500)) {
                 // log_t("Read %4.0f invalid", temperature_thermocouple_c);
+
+                /* If no valid temperature has been read for a long time, present the tip is disconnected */
+                if ((millis() - m_timestamp_temperature_read) >= CONFIG_TIP_READ_TIMEOUT) {
+                    log_w("No valid temperature read for a while.");
+                    m_sm = STATE_0_DISCONNECTED;
+                }
+
                 break;
             }
 
@@ -284,6 +288,9 @@ int element_task(void) {
             //  * But for now the default one seems to work pretty well, so let's not overcomplicate things. */
             // if (m_dt_de_available == false ) {
             // }
+
+            /* Report tip as connected */
+            m_element_connected = true;
 
             /* Save the value we just read */
             m_timestamp_temperature_read = millis();
