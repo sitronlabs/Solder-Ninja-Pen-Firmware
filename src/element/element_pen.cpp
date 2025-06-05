@@ -57,11 +57,6 @@ int element_setup(void) {
         log_e("Failed to setup afe!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
-
-    /* Setup dc-dc */
-    pinMode(PC14, OUTPUT);
-    digitalWrite(PC14, LOW);
-
 #elif R8A
 
     /* Setup thermocouple analog front end */
@@ -70,11 +65,6 @@ int element_setup(void) {
         log_e("Failed to setup afe!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
-
-    /* Setup dc-dc */
-    pinMode(3, OUTPUT);
-    digitalWrite(3, LOW);
-
 #else
 #error Invalid hardware version
 #endif
@@ -348,13 +338,8 @@ int element_task(void) {
                 break;
             }
 
-#if R4J
             /* Turn on dc-dc */
-            digitalWrite(PC14, HIGH);
-#elif R8A
-            /* Turn on dc-dc */
-            digitalWrite(3, HIGH);
-#endif
+            power_enabled_set(true);
 
             /* Move on */
             m_sm = STATE_5_HEAT;
@@ -380,13 +365,8 @@ int element_task(void) {
                 break;
             }
 
-#if R4J
             /* Turn off dc-dc */
-            digitalWrite(PC14, LOW);
-#elif R8A
-            /* Turn off dc-dc */
-            digitalWrite(3, LOW);
-#endif
+            power_enabled_set(false);
 
             /* Move on */
             m_sm = STATE_3_START;

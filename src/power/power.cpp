@@ -156,6 +156,11 @@ int power_setup(void) {
     }
 
 #if R4J
+
+    /* Setup dc-dc */
+    pinMode(PC14, OUTPUT);
+    digitalWrite(PC14, LOW);
+
     /* Setup dac for dc-dc regulation */
     res = m_dac.setup(SPI, 8000000, PA1, 3.3);
     if (res < 0) {
@@ -163,6 +168,11 @@ int power_setup(void) {
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
 #elif R8A
+
+    /* Setup dc-dc */
+    pinMode(3, OUTPUT);
+    digitalWrite(3, LOW);
+
     /* Setup dac for dc-dc regulation */
     res = m_dac.setup(SPI1, 8000000, 20, 3.3);
     if (res < 0) {
@@ -240,6 +250,34 @@ int power_negotiated_power_limit_get(float &power_limit) {
 
     /* Return success */
     power_limit = m_option_power_max_compute(contract);
+    return 0;
+}
+
+/**
+ * @brief
+ * @param enabled
+ * @return
+ */
+int power_enabled_set(const bool enabled) {
+    if (enabled == true) {
+#if R4J
+        /* Turn on dc-dc */
+        digitalWrite(PC14, HIGH);
+#elif R8A
+        /* Turn on dc-dc */
+        digitalWrite(3, HIGH);
+#endif
+    } else {
+#if R4J
+        /* Turn off dc-dc */
+        digitalWrite(PC14, LOW);
+#elif R8A
+        /* Turn off dc-dc */
+        digitalWrite(3, LOW);
+#endif
+    }
+
+    /* Return success */
     return 0;
 }
 

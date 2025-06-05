@@ -34,6 +34,9 @@ struct power_option {
 int power_contract_get(struct power_option &contract);
 int power_negotiated_power_limit_get(float &power_limit);
 
+/* Heating */
+int power_enabled_set(const bool enabled);
+
 /* Periodic task */
 int power_task(void);
 
