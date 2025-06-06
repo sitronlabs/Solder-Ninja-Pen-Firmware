@@ -35,16 +35,25 @@ static int m_qc_dn_m_pin = 29;
 static int m_qc_dp_m_pin = 28;
 
 /**
- *
- * @return
+ * @brief Adjusts the buck converter output voltage based on desired power limit.
+ * @param[in] power_limit Desired output power in watts
+ * @return 0 on success, negative error code otherwise
  */
 static int m_adjust_buck(const float power_limit) {
 
-    /* Compute buck voltage */
-    float buck_voltage = sqrt(((power_limit) * 0.80) * 2.1);
+    /* Compute buck voltage
+     * @note Three main improvements possible:
+     * 1) Replace fixed efficiency with dynamic calculation based on vin, vout, iout and temperature
+     * 2) Model the 2.1Ω load resistance variation with temperature using thermal coefficient
+     * 3) Implement closed-loop feedback using measured voltage/current for precise power regulation */
+    float efficiency = 0.80;
+    float buck_voltage = sqrt((power_limit * efficiency) * 2.1);
     log_d("Using buck voltage of %.2fV.", buck_voltage);
 
-    /* Configure dac5311 */
+    /* Configure dac5311
+     * @note This iteration could be replaced with direct computation:
+     * vdac = (vref * (1 + rtop/rbot + rtop/rdac) - vout_target) * (rdac/rtop)
+     * dac_code = (vdac / 3.3) * 255 */
     const float rtop = 590 * 1000;
     const float rbot = 63.4 * 1000;
     const float rdac = 300 * 1000;
@@ -74,7 +83,9 @@ static int m_adjust_buck(const float power_limit) {
 }
 
 /**
- *
+ * @brief Computes the maximum power offered by the given option.
+ * @param[in] option The option to compute the maximum power for.
+ * @return The maximum power offered by the given option.
  */
 static float m_option_power_max_compute(struct power_option &option) {
     switch (option.type) {
@@ -92,7 +103,8 @@ static float m_option_power_max_compute(struct power_option &option) {
 }
 
 /**
- * Add the given option to the list.
+ * @brief Adds the given option to the list.
+ * @param[in] option The option to add.
  * @return 1 if the new option offers more power than the previous ones, 0 if it doesn't, or a negative error code otherwise.
  */
 static int m_options_add(struct power_option &option) {
@@ -130,9 +142,8 @@ static int m_options_add(struct power_option &option) {
 }
 
 /**
- * @brief
- * @param
- * @return
+ * @brief Sets up the power management module.
+ * @return 0 on success, negative error code otherwise.
  */
 int power_setup(void) {
     int res;
@@ -186,9 +197,9 @@ int power_setup(void) {
 }
 
 /**
- * @brief
- * @param contract
- * @return
+ * @brief Finds the best contract offered by the various power providers.
+ * @param[out] contract The best contract offered by USB PD.
+ * @return 0 on success, negative error code otherwise.
  */
 int power_contract_get(struct power_option &contract) {
     float power_max;
@@ -232,9 +243,9 @@ int power_contract_get(struct power_option &contract) {
 }
 
 /**
- * @brief
- * @param power_limit
- * @return
+ * @brief Finds the negotiated power limit.
+ * @param[out] power_limit The negotiated power limit.
+ * @return 0 on success, negative error code otherwise.
  */
 int power_negotiated_power_limit_get(float &power_limit) {
 
@@ -254,9 +265,9 @@ int power_negotiated_power_limit_get(float &power_limit) {
 }
 
 /**
- * @brief
- * @param enabled
- * @return
+ * @brief Enables or disables the power supply.
+ * @param[in] enabled Whether or not to enable the power supply.
+ * @return 0 on success, negative error code otherwise.
  */
 int power_enabled_set(const bool enabled) {
     if (enabled == true) {
@@ -282,14 +293,13 @@ int power_enabled_set(const bool enabled) {
 }
 
 /**
- * @brief
- * @param
- * @return
+ * Main task of the power management module.
+ * @return 0 on success, negative error code otherwise.
  */
 int power_task(void) {
     int res;
 
-    /* State machine
+    /* Negotiation state machine
      * 1) Try usb tc
      * 2) Try usb bc
      * 3) Try usb pd
@@ -459,7 +469,7 @@ int power_task(void) {
                 log_i("Type-C src advertises 1.5A.");
                 current = 1.5;
             } else if (cc1 == USB_TYPEC_CC_STATUS_RP_DEF || cc2 == USB_TYPEC_CC_STATUS_RP_DEF) {
-                log_i("Type-C src advertises default current.");
+                log_i("Type-C src advertises 0.5A.");
                 current = 0.5;
             }
 
@@ -527,8 +537,8 @@ int power_task(void) {
         case STATE_BC_2: {
 
             /* Leave the switches open for 2 seconds before performing a new detection,
-             * less than that seems to not reliabily detect some chargers. */
-            if (millis() - m_timestamp < 2000) {
+             * less than that seems to not reliably detect some chargers. */
+            if ((millis() - m_timestamp) < 2000) {
                 break;
             }
 
@@ -550,7 +560,7 @@ int power_task(void) {
         case STATE_BC_3: {
 
             /* Wait */
-            if (millis() - m_timestamp < 15) {
+            if ((millis() - m_timestamp) < 15) {
                 break;
             }
 
@@ -594,32 +604,32 @@ int power_task(void) {
             float current = 0;
             switch (type) {
                 case PI3USB9281C_DEVICE_TYPE_USB_CDP: {
-                    log_i("Detected usb device of type cdp.");
+                    log_i("Detected usb device of type cdp (1.5A).");
                     current = 1.5f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_USB_DCP: {
-                    log_i("Detected usb device of type dcp.");
+                    log_i("Detected usb device of type dcp (1.5A).");
                     current = 1.5f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_1A: {
-                    log_i("Detected usb device of type 1A charger.");
+                    log_i("Detected usb device of type charger (1.0A).");
                     current = 1.0f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_2A: {
-                    log_i("Detected usb device of type 2A charger.");
+                    log_i("Detected usb device of type charger (2.0A).");
                     current = 2.0f;
                     break;
                 }
                 case PI3USB9281C_DEVICE_TYPE_CHARGER_2_4A: {
-                    log_i("Detected usb device of type 2.4A charger.");
+                    log_i("Detected usb device of type charger (2.4A).");
                     current = 2.4f;
                     break;
                 }
                 default: {
-                    log_i("Detected usb device of type sdp.");
+                    log_i("Detected usb device of type sdp (0.5A).");
                     current = 0.5f;
                     break;
                 }
@@ -740,7 +750,7 @@ int power_task(void) {
             usb_pd_message response;
             res = m_fusb302.pd_message_receive(response);
             if (res < 0) {
-                log_e("Failed to check for incoming messages!");
+                log_e("Failed to check for incoming pd messages!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -749,7 +759,7 @@ int power_task(void) {
             }
 
             /* Log */
-            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
@@ -841,7 +851,7 @@ int power_task(void) {
 
             /* Handle other messages */
             else {
-                log_w("Unexpected message (0).");
+                log_w("Unexpected pd message (1).");
             }
 
             /* Otherwise stay in this state
@@ -867,7 +877,7 @@ int power_task(void) {
             usb_pd_message response;
             res = m_fusb302.pd_message_receive(response);
             if (res < 0) {
-                log_e("Failed to check for incoming messages!");
+                log_e("Failed to check for incoming pd messages!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -876,7 +886,7 @@ int power_task(void) {
             }
 
             /* Log */
-            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
@@ -906,7 +916,7 @@ int power_task(void) {
 
             /* Handle other messages */
             else {
-                log_w("Unexpected message (1).");
+                log_w("Unexpected pd message (2).");
             }
 
             /* Otherwise stay in this state */
@@ -929,7 +939,7 @@ int power_task(void) {
             usb_pd_message response;
             res = m_fusb302.pd_message_receive(response);
             if (res < 0) {
-                log_e("Failed to check for incoming messages!");
+                log_e("Failed to check for incoming pd messages!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -938,7 +948,7 @@ int power_task(void) {
             }
 
             /* Log */
-            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
@@ -966,7 +976,7 @@ int power_task(void) {
 
             /* Handle other messages */
             else {
-                log_w("Unexpected message (2).");
+                log_w("Unexpected pd message (3).");
             }
 
             /* Otherwise stay in this state */
@@ -982,7 +992,8 @@ int power_task(void) {
 
         case STATE_QC_0: {
 
-            /* Only look into hvdcp if we found a dcp charger */
+            /* Only attempt HVDCP handshake if we detected a DCP charger during BC1.2 detection.
+             * This is required as HVDCP builds on top of standard DCP functionality */
             if (m_dcp_detected != true) {
                 m_sm = STATE_QC_10;
             }
@@ -1001,7 +1012,8 @@ int power_task(void) {
 
         case STATE_QC_1: {
 
-            /* Reset all the pins as inputs */
+            /* Reset all GPIO pins used for D+/D- voltage control.
+             * We use a resistor network to generate specific voltage levels. */
             pinMode(m_qc_dn_h_pin, INPUT);
             pinMode(m_qc_dn_m_pin, INPUT);
             pinMode(m_qc_dn_l_pin, INPUT);
@@ -1009,7 +1021,7 @@ int power_task(void) {
             pinMode(m_qc_dp_m_pin, INPUT);
             pinMode(m_qc_dp_l_pin, INPUT);
 
-            /* Route usb signal to resistor network */
+            /* Route USB D+/D- to our voltage control network instead of USB data lines */
             if (m_fsusb43.output_select(FSUSB43_OUTPUT_2) < 0 ||
                 m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_CLOSED) < 0) {
                 log_e("Failed to route signals!");
@@ -1025,14 +1037,15 @@ int power_task(void) {
 
         case STATE_QC_2: {
 
-            /* Advertise that we are a hvdcp compliant sink device
-             * by setting 0.325V - 2V to D+ for at least 1.25 seconds */
+            /* Begin HVDCP handshake step 1.
+             * To advertise that we are a HVDCP compliant sink device, we must present 0.325V-2V on D+ for at least 1.25 seconds.
+             * During this time, the source may keep D+ and D- shorted. */
             pinMode(m_qc_dp_h_pin, OUTPUT);
             pinMode(m_qc_dp_l_pin, OUTPUT);
             digitalWrite(m_qc_dp_h_pin, HIGH);
             digitalWrite(m_qc_dp_l_pin, LOW);
 
-            /* Configure ADC on D- pin */
+            /* Configure ADC to monitor D- voltage for PSU response */
             analogRead(A3);
 
             /* Move on */
@@ -1043,16 +1056,18 @@ int power_task(void) {
 
         case STATE_QC_3: {
 
-            /* Wait */
-            if (millis() - m_timestamp < 1000) {
+            /* Wait minimum 1s before checking PSU response */
+            if ((millis() - m_timestamp) < 1000) {
                 break;
             }
 
-            /* Wait for D- pin to be pulled low by the source with a timeout */
+            /* Continue with HVDCP handshake step 2.
+             * Source should discharge D- through pull-down resistor.
+             * We monitor D- voltage and wait for it to drop below 0.2V.
+             * Timeout after 3s if source doesn't respond. */
             float pin_dn_voltage = (3.3 * analogRead(A3)) / 1023.0;
-            log_t("USB DN = %f", pin_dn_voltage);
             if (pin_dn_voltage > 0.2) {
-                if (millis() - m_timestamp > 3000) {
+                if ((millis() - m_timestamp) > 3000) {
                     log_w("HVDCP handshake timed out.");
                     m_sm = STATE_QC_10;
                     break;
@@ -1070,12 +1085,18 @@ int power_task(void) {
 
         case STATE_QC_4: {
 
-            /* Wait */
-            if (millis() - m_timestamp < 2) {
+            /* Small delay before voltage request
+             * Not sure why, but let's leave it here for now */
+            if ((millis() - m_timestamp) < 2) {
                 break;
             }
 
-            /* Ask for 12V */
+            /* Request 12V output by setting:
+             * D+: 0.325V-2V
+             * D-: 0.325V-2V
+             * Other valid combinations:
+             * D+ >2V, D- 0.325V-2V    -> 9V
+             * D+ 0.325V-2V, D- GND    -> 5V */
             log_d("Asking for 12V");
             pinMode(m_qc_dp_h_pin, OUTPUT);
             pinMode(m_qc_dp_l_pin, OUTPUT);
@@ -1094,22 +1115,27 @@ int power_task(void) {
 
         case STATE_QC_5: {
 
-            /* Wait */
-            if (millis() - m_timestamp < 60) {
+            /* Wait for voltage transition (60ms) */
+            if ((millis() - m_timestamp) < 60) {
                 break;
             }
 
-            /* Confirm vbus is now 12V */
+            /* Verify VBUS is at 12V ±10% */
             float vbus = 0;
-            m_fusb302.vbus_measure(vbus);
-            log_t("VBUS = %f", vbus);
-            if (fabs(12.0 - vbus) > 12.0 * 0.1) {
+            res = m_fusb302.vbus_measure(vbus);
+            if (res < 0) {
+                log_w("Failed to read vbus!");
+                m_errors_qc++;
+                m_sm = STATE_QC_0;
+                break;
+            }
+            if ((vbus < (12.0 * 0.9)) || (vbus > (12 * 1.1))) {
                 log_w("HVDCP Invalid voltage");
                 m_sm = STATE_QC_10;
                 break;
             }
 
-            /* Add power option */
+            /* Add 12V/1.5A power option to available power sources */
             struct power_option option = {
                 .provider = POWER_PROVIDER_USB_QC,
                 .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
@@ -1139,7 +1165,7 @@ int power_task(void) {
             usb_pd_message response;
             res = m_fusb302.pd_message_receive(response);
             if (res < 0) {
-                log_e("Failed to check for incoming messages!");
+                log_e("Failed to check for incoming pd messages!");
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
@@ -1148,7 +1174,7 @@ int power_task(void) {
             }
 
             /* Log */
-            log_d("Received usb pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+            log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
             for (unsigned int i = 0; i < response.object_count; i++) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
@@ -1240,7 +1266,7 @@ int power_task(void) {
 
             /* Handle other messages */
             else {
-                log_w("Unexpected message (3).");
+                log_w("Unexpected pd message (4).");
             }
 
             /* Stay here */
