@@ -516,12 +516,22 @@ int power_task(void) {
                 break;
             }
 
+            /* Watch for timeout */
+            if ((millis() - m_timestamp) >= 1500) {
+                log_w("Timed out when detecting a usb device, trying again...");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            }
+
             /* Wait for a device attach event */
-            res = m_pi3usb9281.device_attach_wait(1000);
+            res = m_pi3usb9281.device_attach_get();
             if (res < 0) {
                 log_w("Failed to detect a usb device, trying again...");
                 m_sm = STATE_BC_0;
                 m_errors_bc++;
+                break;
+            } else if (res == 0) {
                 break;
             }
 
