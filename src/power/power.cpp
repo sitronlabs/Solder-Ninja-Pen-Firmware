@@ -996,6 +996,7 @@ int power_task(void) {
              * This is required as HVDCP builds on top of standard DCP functionality */
             if (m_dcp_detected != true) {
                 m_sm = STATE_QC_10;
+                break;
             }
 
             /* Don't retry too many times */
