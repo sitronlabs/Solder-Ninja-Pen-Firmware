@@ -337,7 +337,9 @@ int power_task(void) {
         STATE_QC_3,
         STATE_QC_4,
         STATE_QC_5,
-        STATE_QC_10,
+        STATE_QC_6,
+        STATE_QC_7,
+        STATE_QC_8,
         STATE_DONE,
     } m_sm;
     switch (m_sm) {
@@ -995,14 +997,14 @@ int power_task(void) {
             /* Only attempt HVDCP handshake if we detected a DCP charger during BC1.2 detection.
              * This is required as HVDCP builds on top of standard DCP functionality */
             if (m_dcp_detected != true) {
-                m_sm = STATE_QC_10;
+                m_sm = STATE_QC_8;
                 break;
             }
 
             /* Don't retry too many times */
             if (m_errors_qc > 5) {
                 log_e("Too many qc errors!");
-                m_sm = STATE_QC_10;
+                m_sm = STATE_QC_8;
                 break;
             }
 
@@ -1070,7 +1072,7 @@ int power_task(void) {
             if (pin_dn_voltage > 0.2) {
                 if ((millis() - m_timestamp) > 3000) {
                     log_w("HVDCP handshake timed out.");
-                    m_sm = STATE_QC_10;
+                    m_sm = STATE_QC_8;
                     break;
                 } else {
                     break;
@@ -1092,12 +1094,7 @@ int power_task(void) {
                 break;
             }
 
-            /* Request 12V output by setting:
-             * D+: 0.325V-2V
-             * D-: 0.325V-2V
-             * Other valid combinations:
-             * D+ >2V, D- 0.325V-2V    -> 9V
-             * D+ 0.325V-2V, D- GND    -> 5V */
+            /* Request 12V output by setting: D+: 0.325V-2V, D-: 0.325V-2V */
             log_d("Asking for 12V");
             pinMode(m_qc_dp_h_pin, OUTPUT);
             pinMode(m_qc_dp_l_pin, OUTPUT);
@@ -1130,9 +1127,9 @@ int power_task(void) {
                 m_sm = STATE_QC_0;
                 break;
             }
-            if ((vbus < (12.0 * 0.9)) || (vbus > (12 * 1.1))) {
+            if ((vbus < (12.0 * 0.9)) || (vbus > (12.0 * 1.1))) {
                 log_w("HVDCP Invalid voltage");
-                m_sm = STATE_QC_10;
+                m_sm = STATE_QC_6;
                 break;
             }
 
@@ -1147,11 +1144,67 @@ int power_task(void) {
             m_options_add(option);
 
             /* Move on */
-            m_sm = STATE_QC_10;
+            m_sm = STATE_QC_8;
             break;
         }
 
-        case STATE_QC_10: {
+        case STATE_QC_6: {
+
+            /* Request 9V output by setting: D+ >2V, D- 0.325V-2V */
+            log_d("Asking for 9V");
+            pinMode(m_qc_dp_h_pin, OUTPUT);
+            pinMode(m_qc_dp_l_pin, OUTPUT);
+            digitalWrite(m_qc_dp_h_pin, HIGH);
+            digitalWrite(m_qc_dp_l_pin, HIGH);
+            pinMode(m_qc_dn_h_pin, OUTPUT);
+            pinMode(m_qc_dn_l_pin, OUTPUT);
+            digitalWrite(m_qc_dn_h_pin, HIGH);
+            digitalWrite(m_qc_dn_l_pin, LOW);
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_QC_7;
+            break;
+        }
+
+        case STATE_QC_7: {
+
+            /* Wait for voltage transition (60ms) */
+            if ((millis() - m_timestamp) < 60) {
+                break;
+            }
+
+            /* Verify VBUS is at 9V ±10% */
+            float vbus = 0;
+            res = m_fusb302.vbus_measure(vbus);
+            if (res < 0) {
+                log_w("Failed to read vbus!");
+                m_errors_qc++;
+                m_sm = STATE_QC_0;
+                break;
+            }
+            if ((vbus < (9.0 * 0.9)) || (vbus > (9.0 * 1.1))) {
+                log_w("HVDCP Invalid voltage");
+                m_sm = STATE_QC_8;
+                break;
+            }
+
+            /* Add 9V/2.0A power option to available power sources */
+            struct power_option option = {
+                .provider = POWER_PROVIDER_USB_QC,
+                .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                .voltage_min = 9.0,
+                .voltage_max = 9.0,
+                .current_max = 2.0,
+            };
+            m_options_add(option);
+
+            /* Move on */
+            m_sm = STATE_QC_8;
+            break;
+        }
+
+        case STATE_QC_8: {
 
             /* Move on */
             m_sm = STATE_DONE;
