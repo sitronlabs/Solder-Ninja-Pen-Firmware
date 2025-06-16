@@ -12,7 +12,7 @@
 
 /* Local variables */
 static enum app_state m_state = APP_STATE_LOCKED;
-static float m_target = 300;
+static float m_target = 350;
 static bool m_target_changed = false;
 static uint32_t m_target_changed_timestamp;
 static bool m_boost_activated = false;
