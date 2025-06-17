@@ -369,13 +369,6 @@ int power_task(void) {
 
         case STATE_TC_0: {
 
-            /* Ensure ic is detected */
-            if (m_fusb302.detect() != true) {
-                log_e("Failed to detect fusb302 ic!");
-                m_sm = STATE_BC_0;
-                break;
-            }
-
             /* Don't retry too many times */
             if (m_errors_tc > 5) {
                 log_e("Too many tc errors!");
@@ -389,6 +382,14 @@ int power_task(void) {
         }
 
         case STATE_TC_1: {
+
+            /* Ensure ic is detected */
+            if (m_fusb302.detect() != true) {
+                log_e("Failed to detect fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
 
             /* Reset internal registers */
             res = m_fusb302.reset();
