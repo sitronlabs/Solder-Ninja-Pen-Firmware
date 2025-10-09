@@ -667,10 +667,6 @@ int power_task(void) {
                             break;
                         }
 
-                        /* Increment message id
-                         * @todo Ideally wait for goodcrc */
-                        m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
-
                         /* Move on */
                         m_timestamp = millis();
                         m_sm = STATE_PD_3;
@@ -729,7 +725,10 @@ int power_task(void) {
 
             /* Handle good crc */
             if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
-                log_d("Good crc.");
+                log_d("Good crc received.");
+
+                /* Increment message id */
+                m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
             }
 
             /* Handle accept message */
@@ -789,8 +788,16 @@ int power_task(void) {
                 log_d(" - Object %u=0x%08X", i, response.objects[i]);
             }
 
+            /* Handle good crc */
+            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
+                log_d("Good crc received.");
+
+                /* Increment message id */
+                m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+            }
+
             /* Handle ready message */
-            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
+            else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
 
                 /* Log */
                 log_i("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
@@ -840,11 +847,19 @@ int power_task(void) {
                     log_d(" - Object %u=0x%08X", i, response.objects[i]);
                 }
 
+                /* Handle good crc */
+                if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
+                    log_d("Good crc received.");
+
+                    /* Increment message id */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+                }
+
                 /* Handle source capabilities message.
                  * Some chargers will send another source capabilities message after negotiation.
                  * This allows us to renegotiate power if better options become available,
                  * for example when another device unplugs from a multi-port charger. */
-                if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
+                else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
 
                     /* Parse each pdo */
                     double power_best = 0;
@@ -916,10 +931,6 @@ int power_task(void) {
                             m_errors_pd++;
                             break;
                         }
-
-                        /* Increment message id
-                         * @todo Ideally wait for goodcrc */
-                        m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
 
                         /* Move on */
                         m_timestamp = millis();
