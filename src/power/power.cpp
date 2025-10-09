@@ -557,20 +557,17 @@ int power_task(void) {
                 break;
             }
 
-            // /* Try to receive power delivery source capabilities */
-            // static struct usb_pd_pdo pdo[7];
-            // res = usb_pd_source_capabilities_list(0, &pdo[0], sizeof(pdo) / sizeof(struct usb_pd_pdo));
-            // if (res < 0) {
-            //     log_e("Failed to retrieve power delivery source capabilities!");
-            //     m_sm = STATE_ERROR;
-            //     break;
-            // }
+            /* Clear pd related variables */
+            m_pd_next_message_id = 0;
+            m_pd_voltage = 0;
+            m_pd_current = 0;
 
-            // TODO
-            // TODO Set data role and power role
-
-            // TODO Maybe clear m_pd_xxx variables
-            // TODO Maybe clear pd related power options
+            /* Clear pd related power options */
+            for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+                if (m_options[i].option.provider == POWER_PROVIDER_USB_PD) {
+                    m_options[i].assigned = false;
+                }
+            }
 
             /* Move on */
             m_timestamp = millis();
