@@ -680,12 +680,16 @@ int power_task(void) {
                 }
             }
 
-            /* Watch for time out */
+            /* Watch for timeout */
             if ((millis() - m_timestamp) >= 500) {
+
+                /* Log */
+                log_w("No source capabilities message received.");
+
+                /* Move on */
                 m_sm = STATE_BC_0;
-                // No sourceap receveid, move on
             } else if ((millis() - m_timestamp) >= 250) {
-                // TODO Ask for source cap
+                // TODO Ask for source capabilities
             }
 
             /* Stay here */
