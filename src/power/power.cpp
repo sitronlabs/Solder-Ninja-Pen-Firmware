@@ -588,13 +588,13 @@ int power_task(void) {
             } else if (res == 1) {
 
                 /* Log */
-                log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
                 for (unsigned int i = 0; i < response.object_count; i++) {
                     log_d(" - Object %u=0x%08X", i, response.objects[i]);
                 }
 
                 /* Handle source capabilities message */
-                if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count > 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES)) {
 
                     /* Parse each pdo looking for the most interesting one
                      * For now we only handle fixed pdos
@@ -639,8 +639,8 @@ int power_task(void) {
                     if (power_best_index >= 0) {
 
                         /* Build message */
-                        struct usb_pd_message request = {0};
-                        request.address = 0;  // ?
+                        struct usb_pd_message request = {};
+                        request.sop_type = USB_PD_SOP_TYPE_DEFAULT;
                         request.header = 0;
                         request.header |= (m_pd_next_message_id & 0b111) << 9;
                         request.header |= (USB_PD_PROTOCOL_REVISION_2_0 << 6);
@@ -713,45 +713,44 @@ int power_task(void) {
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
-            } else if (res == 0) {
-                break;
-            }
+            } else if (res == 1) {
 
-            /* Log */
-            log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
-            for (unsigned int i = 0; i < response.object_count; i++) {
-                log_d(" - Object %u=0x%08X", i, response.objects[i]);
-            }
+                /* Log */
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
+                for (unsigned int i = 0; i < response.object_count; i++) {
+                    log_d(" - Object %u=0x%08X", i, response.objects[i]);
+                }
 
-            /* Handle good crc */
-            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
-                log_d("Good crc received.");
+                /* Handle good crc */
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC)) {
+                    log_d("Good crc received.");
 
-                /* Increment message id */
-                m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
-            }
+                    /* Increment message id */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+                }
 
-            /* Handle accept message */
-            else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT) {
-                log_i("Pdo request accepted.");
+                /* Handle accept message */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT)) {
+                    log_i("Pdo request accepted.");
 
-                /* Move on */
-                m_timestamp = millis();
-                m_sm = STATE_PD_4;
-                break;
-            }
+                    /* Move on */
+                    m_timestamp = millis();
+                    m_sm = STATE_PD_4;
+                    break;
+                }
 
-            /* Handle reject message */
-            else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_REJECT) {
-                log_w("Pdo request rejected.");
-                m_sm = STATE_PD_0;
-                m_errors_pd++;
-                break;
-            }
+                /* Handle reject message */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_REJECT)) {
+                    log_w("Pdo request rejected.");
+                    m_sm = STATE_PD_0;
+                    m_errors_pd++;
+                    break;
+                }
 
-            /* Handle other messages */
-            else {
-                log_w("Unexpected pd message (2).");
+                /* Handle other messages */
+                else {
+                    log_w("Unexpected pd message (2).");
+                }
             }
 
             /* Otherwise stay in this state */
@@ -778,48 +777,47 @@ int power_task(void) {
                 m_sm = STATE_PD_0;
                 m_errors_pd++;
                 break;
-            } else if (res == 0) {
-                break;
-            }
-
-            /* Log */
-            log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
-            for (unsigned int i = 0; i < response.object_count; i++) {
-                log_d(" - Object %u=0x%08X", i, response.objects[i]);
-            }
-
-            /* Handle good crc */
-            if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
-                log_d("Good crc received.");
-
-                /* Increment message id */
-                m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
-            }
-
-            /* Handle ready message */
-            else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY) {
+            } else if (res == 1) {
 
                 /* Log */
-                log_i("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
+                for (unsigned int i = 0; i < response.object_count; i++) {
+                    log_d(" - Object %u=0x%08X", i, response.objects[i]);
+                }
 
-                /* Add power option */
-                struct power_option option = {
-                    .provider = POWER_PROVIDER_USB_PD,
-                    .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
-                    .voltage_min = m_pd_voltage,
-                    .voltage_max = m_pd_voltage,
-                    .current_max = m_pd_current,
-                };
-                m_options_add(option);
+                /* Handle good crc */
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC)) {
+                    log_d("Good crc received.");
 
-                /* Move on */
-                m_sm = STATE_PD_MONITOR;
-                break;
-            }
+                    /* Increment message id */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+                }
 
-            /* Handle other messages */
-            else {
-                log_w("Unexpected pd message (3).");
+                /* Handle ready message */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY)) {
+
+                    /* Log */
+                    log_i("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
+
+                    /* Add power option */
+                    struct power_option option = {
+                        .provider = POWER_PROVIDER_USB_PD,
+                        .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                        .voltage_min = m_pd_voltage,
+                        .voltage_max = m_pd_voltage,
+                        .current_max = m_pd_current,
+                    };
+                    m_options_add(option);
+
+                    /* Move on */
+                    m_sm = STATE_PD_MONITOR;
+                    break;
+                }
+
+                /* Handle other messages */
+                else {
+                    log_w("Unexpected pd message (3).");
+                }
             }
 
             /* Otherwise stay in this state */
@@ -842,13 +840,13 @@ int power_task(void) {
             } else if (res == 1) {
 
                 /* Log */
-                log_d("Received pd message: address=0x%04X, header=0x%04X, object_count=%d", response.address, response.header, response.object_count);
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
                 for (unsigned int i = 0; i < response.object_count; i++) {
                     log_d(" - Object %u=0x%08X", i, response.objects[i]);
                 }
 
                 /* Handle good crc */
-                if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC) {
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC)) {
                     log_d("Good crc received.");
 
                     /* Increment message id */
@@ -859,7 +857,7 @@ int power_task(void) {
                  * Some chargers will send another source capabilities message after negotiation.
                  * This allows us to renegotiate power if better options become available,
                  * for example when another device unplugs from a multi-port charger. */
-                else if ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES) {
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count > 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES)) {
 
                     /* Parse each pdo */
                     double power_best = 0;
@@ -904,8 +902,8 @@ int power_task(void) {
                     if (power_best_index >= 0) {
 
                         /* Build message */
-                        struct usb_pd_message request = {0};
-                        request.address = 0;  // ?
+                        struct usb_pd_message request = {};
+                        request.sop_type = USB_PD_SOP_TYPE_DEFAULT;
                         request.header = 0;
                         request.header |= (m_pd_next_message_id & 0b111) << 9;
                         request.header |= (USB_PD_PROTOCOL_REVISION_2_0 << 6);
@@ -952,26 +950,33 @@ int power_task(void) {
                 break;
             }
 
-            /* Read vbus */
-            float vbus = 0;
-            res = m_fusb302.vbus_measure(vbus);
-            if (res < 0) {
-                log_w("Failed to monitor vbus!");
-                m_errors_pd++;
-                break;
-            } else {
-                m_errors_pd = 0;
-            }
+            /* Monitor vbus periodically
+             * @note While the FUSB302 is reading VBUS it cannot receive PD messages */
+            static uint32_t m_timestamp_vbus_monitor = 0;
+            if ((millis() - m_timestamp_vbus_monitor) >= 100) {
+                m_timestamp_vbus_monitor = millis();
 
-            /* Monitor vbus */
-            if ((vbus < (m_pd_voltage * 0.9)) || (vbus > (m_pd_voltage * 1.1))) {
+                /* Read vbus */
+                float vbus = 0;
+                res = m_fusb302.vbus_measure(vbus);
+                if (res < 0) {
+                    log_w("Failed to monitor vbus!");
+                    m_errors_pd++;
+                    break;
+                } else {
+                    m_errors_pd = 0;
+                }
 
-                /* Power source appears unstable, reverting to IDLE for full renegotiation.
-                 * @note Future improvement: Could try falling back to lower power mode
-                 * or previous working configuration instead of full restart */
-                log_w("Measured out of range %.2fV vbus while monitoring pd.", vbus);
-                m_sm = STATE_IDLE;
-                break;
+                /* Ensure vbus is within 10% of the expected voltage */
+                if ((vbus < (m_pd_voltage * 0.9)) || (vbus > (m_pd_voltage * 1.1))) {
+
+                    /* Power source appears unstable, reverting to IDLE for full renegotiation.
+                     * @note Future improvement: Could try falling back to lower power mode
+                     * or previous working configuration instead of full restart */
+                    log_w("Measured out of range %.2fV vbus while monitoring pd.", vbus);
+                    m_sm = STATE_IDLE;
+                    break;
+                }
             }
 
             /* Stay here */
@@ -1361,26 +1366,33 @@ int power_task(void) {
                 break;
             }
 
-            /* Read vbus */
-            float vbus = 0;
-            res = m_fusb302.vbus_measure(vbus);
-            if (res < 0) {
-                log_w("Failed to monitor vbus!");
-                m_errors_qc++;
-                break;
-            } else {
-                m_errors_qc = 0;
-            }
+            /* Monitor vbus periodically
+             * @note While the FUSB302 is reading VBUS it cannot receive PD messages */
+            static uint32_t m_timestamp_vbus_monitor = 0;
+            if ((millis() - m_timestamp_vbus_monitor) >= 100) {
+                m_timestamp_vbus_monitor = millis();
 
-            /* Monitor vbus */
-            if ((vbus < (m_qc_voltage * 0.9)) || (vbus > (m_qc_voltage * 1.1))) {
+                /* Read vbus */
+                float vbus = 0;
+                res = m_fusb302.vbus_measure(vbus);
+                if (res < 0) {
+                    log_w("Failed to monitor vbus!");
+                    m_errors_qc++;
+                    break;
+                } else {
+                    m_errors_qc = 0;
+                }
 
-                /* Power source appears unstable, reverting to IDLE for full renegotiation.
-                 * @note Future improvement: Could try falling back to BC1.2 mode (DCP)
-                 * instead of full restart since we know DCP was detected */
-                log_w("Measured out of range %.2fV vbus while monitoring hvdcp.", vbus);
-                m_sm = STATE_IDLE;
-                break;
+                /* Ensure vbus is within 10% of the expected voltage */
+                if ((vbus < (m_qc_voltage * 0.9)) || (vbus > (m_qc_voltage * 1.1))) {
+
+                    /* Power source appears unstable, reverting to IDLE for full renegotiation.
+                     * @note Future improvement: Could try falling back to BC1.2 mode (DCP)
+                     * instead of full restart since we know DCP was detected */
+                    log_w("Measured out of range %.2fV vbus while monitoring hvdcp.", vbus);
+                    m_sm = STATE_IDLE;
+                    break;
+                }
             }
 
             /* Stay here */
