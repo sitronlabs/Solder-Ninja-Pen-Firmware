@@ -25,6 +25,7 @@ static struct {
     bool assigned;
     struct power_option option;
 } m_options[POWER_OPTIONS_LIMIT];
+static bool m_options_changed = false;
 
 /* Other local variables */
 static int m_qc_dn_h_pin = 16;
@@ -126,19 +127,27 @@ static int m_options_add(struct power_option &option) {
             memcpy(&m_options[i].option, &option, sizeof(struct power_option));
             m_options[i].assigned = true;
 
-            /* Return wether or not the new option offers more power */
-            if (m_option_power_max_compute(option) > power_max) {
-                m_adjust_buck(m_option_power_max_compute(option));  // Temp
-                return 1;
-            } else {
-                m_adjust_buck(power_max);  // Temp
-                return 0;
-            }
+            /* Signal that options have changed */
+            m_options_changed = true;
+
+            /* Return whether or not the new option offers more power */
+            float new_option_power = m_option_power_max_compute(option);
+            return (new_option_power > power_max) ? 1 : 0;
         }
     }
 
     /* Return no space */
     return -1;
+}
+
+/**
+ * @brief Clears all options from the list.
+ */
+static void m_options_clear(void) {
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        m_options[i].assigned = false;
+    }
+    m_options_changed = true;
 }
 
 /**
@@ -299,6 +308,30 @@ int power_enabled_set(const bool enabled) {
 int power_task(void) {
     int res;
 
+    /* Adjust buck converter based on best available power option if options have changed */
+    if (m_options_changed == true) {
+        m_options_changed = false;
+
+        /* Find the best available power option */
+        float power_best = 0;
+        for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+            if (m_options[i].assigned == true) {
+                float power_iter = m_option_power_max_compute(m_options[i].option);
+                if (power_iter > power_best) {
+                    power_best = power_iter;
+                }
+            }
+        }
+
+        /* Adjust buck converter */
+        res = m_adjust_buck(power_best);
+        if (res < 0) {
+            log_w("Failed to adjust buck converter to %.2fW", power_best);
+        } else {
+            log_d("Adjusted buck converter to %.2fW", power_best);
+        }
+    }
+
     /* Negotiation state machine that proceeds as follows:
      *
      * 1) Try USB Type-C first to determine basic power capabilities
@@ -358,9 +391,7 @@ int power_task(void) {
             m_errors_pd = 0;
 
             /* Clear list of options */
-            for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
-                m_options[i].assigned = false;
-            }
+            m_options_clear();
 
             /* Start with Type-C */
             m_sm = STATE_TC_0;
