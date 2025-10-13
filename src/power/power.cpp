@@ -580,7 +580,7 @@ int power_task(void) {
             }
 
             /* Reset PD logic */
-            res = m_fusb302.pd_reset();
+            res = m_fusb302.pd_reset_logic();
             if (res < 0) {
                 log_e("Failed to reset fusb302 pd logic!");
                 m_sm = STATE_PD_0;
@@ -711,16 +711,24 @@ int power_task(void) {
                 }
             }
 
-            /* Watch for timeout */
-            if ((millis() - m_timestamp) >= 500) {
+            /* If no source capabilities message received after tFirstSourceCap (250ms), trigger a hard reset as per section 6.6.3.3 */
+            if ((millis() - m_timestamp) >= 250) {
 
                 /* Log */
-                log_w("No source capabilities message received.");
+                log_w("No source capabilities received.");
+
+                /* Send hard reset sequence */
+                res = m_fusb302.pd_reset_hard();
+                if (res < 0) {
+                    log_e("Failed to send hard reset sequence (%d)!", res);
+                    m_sm = STATE_PD_0;
+                    m_errors_pd++;
+                    break;
+                }
 
                 /* Move on */
                 m_sm = STATE_BC_0;
-            } else if ((millis() - m_timestamp) >= 250) {
-                // TODO Ask for source capabilities
+                break;
             }
 
             /* Stay here */
