@@ -1110,8 +1110,9 @@ int power_task(void) {
                     m_errors_pd = 0;
                 }
 
-                /* Ensure vbus is within 10% of the expected voltage */
-                if ((vbus < (m_pd_voltage * 0.9)) || (vbus > (m_pd_voltage * 1.1))) {
+                /* Ensure vbus is within 20% of the expected voltage
+                 * @note The FUSB302 has a resolution of 0.42V per step, so we need to allow for this when checking the voltage */
+                if (((vbus + 0.42f) < (m_pd_voltage * 0.8)) || ((vbus - 0.42f) > (m_pd_voltage * 1.2))) {
 
                     /* Power source appears unstable, reverting to IDLE for full renegotiation.
                      * @note Future improvement: Could try falling back to lower power mode
@@ -1412,7 +1413,7 @@ int power_task(void) {
                 break;
             }
 
-            /* Verify VBUS is at 12V ±10% */
+            /* Verify VBUS is at 12V ±20% */
             float vbus = 0;
             res = m_fusb302.vbus_measure(vbus);
             if (res < 0) {
@@ -1421,8 +1422,8 @@ int power_task(void) {
                 m_sm = STATE_QC_0;
                 break;
             }
-            if ((vbus < (m_qc_voltage * 0.9)) || (vbus > (m_qc_voltage * 1.1))) {
-                log_w("HVDCP Invalid voltage");
+            if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
+                log_w("HVDCP Invalid voltage (measured %.2fV instead of %.2fV).", vbus, m_qc_voltage);
                 m_sm = STATE_QC_6;
                 break;
             }
@@ -1470,7 +1471,7 @@ int power_task(void) {
                 break;
             }
 
-            /* Verify VBUS is at 9V ±10% */
+            /* Verify VBUS is at 9V ±20% */
             float vbus = 0;
             res = m_fusb302.vbus_measure(vbus);
             if (res < 0) {
@@ -1479,8 +1480,8 @@ int power_task(void) {
                 m_sm = STATE_QC_0;
                 break;
             }
-            if ((vbus < (m_qc_voltage * 0.9)) || (vbus > (m_qc_voltage * 1.1))) {
-                log_w("HVDCP Invalid voltage");
+            if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
+                log_w("HVDCP Invalid voltage (measured %.2fV instead of %.2fV).", vbus, m_qc_voltage);
                 m_sm = STATE_DONE;
                 break;
             }
@@ -1526,8 +1527,9 @@ int power_task(void) {
                     m_errors_qc = 0;
                 }
 
-                /* Ensure vbus is within 10% of the expected voltage */
-                if ((vbus < (m_qc_voltage * 0.9)) || (vbus > (m_qc_voltage * 1.1))) {
+                /* Ensure vbus is within 20% of the expected voltage
+                 * @note The FUSB302 has a resolution of 0.42V per step, so we need to allow for this when checking the voltage */
+                if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
 
                     /* Power source appears unstable, reverting to IDLE for full renegotiation.
                      * @note Future improvement: Could try falling back to BC1.2 mode (DCP)
