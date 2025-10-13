@@ -1,76 +1,87 @@
 /* Self header */
 #include "power.h"
 
-/* Project */
+/* Project headers */
 #include "errors/errors.h"
 #include "log/log.h"
 
-/* Arduino libraries */
+/* Arduino headers */
 #include <dac5311.h>
 #include <fsusb43.h>
 #include <fusb302.h>
 #include <pi3usb9281c.h>
 
 /* Config */
-#define POWER_OPTIONS_LIMIT 10
+#define POWER_OPTIONS_LIMIT 10  //!< Maximum number of power options to track
 
 /* Peripherals */
-static fsusb43 m_fsusb43;
-static fusb302 m_fusb302;
-static pi3usb9281c m_pi3usb9281;
-static dac5311 m_dac;
+static fsusb43 m_fsusb43;         //!< USB mux controller
+static fusb302 m_fusb302;         //!< USB Type-C and PD PHY controller
+static pi3usb9281c m_pi3usb9281;  //!< USB charger detection IC
+static dac5311 m_dac;             //!< DAC for buck converter regulation
 
-/* Internal list of power options */
+/* Power options management */
 static struct {
     bool assigned;
     struct power_option option;
 } m_options[POWER_OPTIONS_LIMIT];
 static bool m_options_changed = false;
 
-/* Other local variables */
-static int m_qc_dn_h_pin = 16;
-static int m_qc_dn_l_pin = 17;
-static int m_qc_dp_h_pin = 18;
-static int m_qc_dp_l_pin = 19;
-static int m_qc_dn_m_pin = 29;
-static int m_qc_dp_m_pin = 28;
+/* HVDCP pin assignments for high voltage charging negotiation */
+static int m_qc_dn_h_pin = 16;  //!< HVDCP D- upper resistor pin
+static int m_qc_dp_h_pin = 18;  //!< HVDCP D+ upper resistor pin
+static int m_qc_dn_l_pin = 17;  //!< HVDCP D- lower resistor pin
+static int m_qc_dp_l_pin = 19;  //!< HVDCP D+ lower resistor pin
+static int m_qc_dn_m_pin = 29;  //!< HVDCP D- middle resistor pin
+static int m_qc_dp_m_pin = 28;  //!< HVDCP D+ middle resistor pin
 
 /**
- * @brief Adjusts the buck converter output voltage based on desired power limit.
- * @param[in] power_limit Desired output power in watts
+ * @brief Adjusts the buck converter output voltage based on desired power limit
+ *
+ * This function calculates the required DAC voltage to achieve the target power output
+ * by considering the buck converter efficiency and load resistance.
+ *
+ * @param[in] power_limit Desired output power in watts (must be > 0)
  * @return 0 on success, negative error code otherwise
+ *
+ * @note Current implementation uses fixed efficiency (80%) and load resistance (2.1Ω).
+ *       Future improvements could include:
+ *       - Dynamic efficiency calculation based on Vin, Vout, Iout, and temperature
+ *       - Temperature-dependent load resistance modeling using thermal coefficient
+ *       - Closed-loop feedback using measured voltage/current for precise regulation
  */
 static int m_adjust_buck(const float power_limit) {
 
-    /* Compute buck voltage
-     * @note Three main improvements possible:
-     * 1) Replace fixed efficiency with dynamic calculation based on vin, vout, iout and temperature
-     * 2) Model the 2.1Ω load resistance variation with temperature using thermal coefficient
-     * 3) Implement closed-loop feedback using measured voltage/current for precise power regulation */
-    float efficiency = 0.80;
-    float buck_voltage = sqrt((power_limit * efficiency) * 2.1);
+    /* Calculate required buck converter output voltage
+     * Using power formula: P = V²/R, solving for V = sqrt(P * R)
+     * Where R is the load resistance (2.1Ω) and efficiency is considered */
+    const float buck_efficiency = 0.80f;
+    const float load_resistance = 2.1f;
+    float buck_voltage = sqrt((power_limit * buck_efficiency) * load_resistance);
     log_d("Using buck voltage of %.2fV.", buck_voltage);
 
-    /* Configure dac5311
-     * @note This iteration could be replaced with direct computation:
-     * vdac = (vref * (1 + rtop/rbot + rtop/rdac) - vout_target) * (rdac/rtop)
-     * dac_code = (vdac / 3.3) * 255 */
-    const float rtop = 590 * 1000;
-    const float rbot = 63.4 * 1000;
-    const float rdac = 300 * 1000;
-    const float vref = 0.7;
+    /* Configure DAC5311 to set the buck converter output voltage
+     * Using iterative approach to find optimal DAC setting
+     * @note This could be optimized with direct calculation:
+     * Vdac = (Vref * (1 + Rtop/Rbot + Rtop/Rdac) - Vout_target) * (Rdac/Rtop)
+     * DAC_code = (Vdac / 3.3V) * 255 */
+    const float rtop = 590 * 1000;   // Top resistor value (590kΩ)
+    const float rbot = 63.4 * 1000;  // Bottom resistor value (63.4kΩ)
+    const float rdac = 300 * 1000;   // DAC resistor value (300kΩ)
+    const float vref = 0.7;          // Reference voltage (0.7V)
+
     for (uint16_t i = 0; i < 256; i++) {
         float vdac = 3.3 * (i / 255.00);
         float vout = vref * (1 + rtop / rbot) + (vref - vdac) * (rtop / rdac);
 
-        /* Voltage for setting matches desired one */
+        /* Check if this DAC setting produces the desired output voltage */
         if ((vout <= buck_voltage) || (i == 255)) {
 
             /* Update dac */
             log_d("Using vdac %.2fV for vout %.2fV.", vdac, vout);
             int res = m_dac.output_voltage_set(vdac);
             if (res < 0) {
-                log_e("Failed to configure dac!");
+                log_e("Failed to configure DAC!");
                 return -1;
             }
 
@@ -84,9 +95,14 @@ static int m_adjust_buck(const float power_limit) {
 }
 
 /**
- * @brief Computes the maximum power offered by the given option.
- * @param[in] option The option to compute the maximum power for.
- * @return The maximum power offered by the given option.
+ * @brief Computes the maximum power offered by the given power option
+ *
+ * Calculates the maximum power available from a power option based on its type.
+ * For voltage/current limited options, power is calculated as V × I.
+ * For fixed power options, the power_max value is returned directly.
+ *
+ * @param[in] option The power option to evaluate
+ * @return Maximum power in watts, or 0 if option type is invalid
  */
 static float m_option_power_max_compute(struct power_option &option) {
     switch (option.type) {
@@ -104,14 +120,23 @@ static float m_option_power_max_compute(struct power_option &option) {
 }
 
 /**
- * @brief Adds the given option to the list.
- * @param[in] option The option to add.
- * @return 1 if the new option offers more power than the previous ones, 0 if it doesn't, or a negative error code otherwise.
+ * @brief Adds a power option to the internal options list
+ *
+ * This function adds a new power option to the available options list and determines
+ * if it offers more power than the currently available options. The function will
+ * find the first available slot and store the option there.
+ *
+ * @param[in] option The power option to add to the list
+ * @return 1 if the new option offers more power than existing options,
+ *         0 if it offers the same or less power,
+ *         -1 if no space is available in the options list
+ *
+ * @note This function automatically sets the m_options_changed flag when a new option is added
  */
 static int m_options_add(struct power_option &option) {
 
     /* Find out the maximum amount of power offered by the options already in the list */
-    float power_max = 0;
+    float power_max = 0.0f;
     for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
         if (m_options[i].assigned == true) {
             float power_iter = m_option_power_max_compute(m_options[i].option);
@@ -121,27 +146,33 @@ static int m_options_add(struct power_option &option) {
         }
     }
 
-    /* Add the new option in the list */
+    /* Find an available slot and add the new option */
     for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
         if (m_options[i].assigned == false) {
+            /* Copy the option data to the available slot */
             memcpy(&m_options[i].option, &option, sizeof(struct power_option));
             m_options[i].assigned = true;
 
-            /* Signal that options have changed */
+            /* Mark that the options list has been modified */
             m_options_changed = true;
 
-            /* Return whether or not the new option offers more power */
+            /* Determine if this new option offers more power than existing ones */
             float new_option_power = m_option_power_max_compute(option);
             return (new_option_power > power_max) ? 1 : 0;
         }
     }
 
-    /* Return no space */
+    /* Return no available slots found */
     return -1;
 }
 
 /**
- * @brief Clears all options from the list.
+ * @brief Clears all power options from the internal options list
+ *
+ * This function marks all power option slots as unassigned and sets the
+ * options changed flag to trigger a re-evaluation of available power.
+ *
+ * @note This function is typically called when starting a new power negotiation or when resetting the power management system
  */
 static void m_options_clear(void) {
     for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
@@ -151,54 +182,70 @@ static void m_options_clear(void) {
 }
 
 /**
- * @brief Sets up the power management module.
- * @return 0 on success, negative error code otherwise.
+ * @brief Initializes the power management module and all associated peripherals
+ *
+ * This function sets up all the hardware components required for USB power negotiation:
+ * - USB charger detection IC (PI3USB9281C)
+ * - USB mux controller (FSUSB43)
+ * - USB Type-C and PD PHY (FUSB302)
+ * - DAC for buck converter regulation (DAC5311)
+ * - Platform-specific DC-DC converter control
+ *
+ * @return 0 on success, negative error code otherwise
+ * @retval -ERROR_PERIPHERAL_SETUP_ERROR if any peripheral fails to initialize
  */
 int power_setup(void) {
     int res;
 
-    /* Setup charger detection ic */
-    res = m_pi3usb9281.setup(Wire, 0x25, 7);  // TODO R4
+    /* Initialize USB charger detection IC (PI3USB9281C)
+     * This IC detects USB charging capabilities and port types */
+    res = m_pi3usb9281.setup(Wire, 0x25, 7);  // TODO: R4J
     if (res < 0) {
-        log_e("Failed to setup pi3usb9281 ic!");
+        log_e("Failed to setup PI3USB9281C charger detection IC!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
 
-    /* Setup usb mux */
+    /* Initialize USB mux controller (FSUSB43)
+     * Routes USB signals between internal PHY and resistor network for HVDCP */
     m_fsusb43.setup(7);
     m_fsusb43.output_select(FSUSB43_OUTPUT_1);
 
-    /* Setup type-c and pd phy */
+    /* Initialize USB Type-C and Power Delivery PHY (FUSB302)
+     * Handles Type-C detection, orientation, and PD negotiation */
     res = m_fusb302.setup(Wire, 0x22);
     if (res < 0) {
-        log_e("Failed to setup fusb302 ic!");
+        log_e("Failed to setup FUSB302 Type-C/PD PHY!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
 
 #if R4J
 
-    /* Setup dc-dc */
+    /* Configure DC-DC converter enable pin */
     pinMode(PC14, OUTPUT);
     digitalWrite(PC14, LOW);
 
-    /* Setup dac for dc-dc regulation */
+    /* Initialize DAC for DC-DC converter regulation
+     * SPI bus, 8MHz clock, CS on PA1, 3.3V reference */
     res = m_dac.setup(SPI, 8000000, PA1, 3.3);
     if (res < 0) {
-        log_e("Failed to setup dac!");
+        log_e("Failed to setup DAC for DC-DC regulation!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
+
 #elif R8A
 
-    /* Setup dc-dc */
+    /* Configure DC-DC converter enable pin */
     pinMode(3, OUTPUT);
     digitalWrite(3, LOW);
 
-    /* Setup dac for dc-dc regulation */
+    /* Initialize DAC for DC-DC converter regulation
+     * SPI1 bus, 8MHz clock, CS on GPIO 20, 3.3V reference */
     res = m_dac.setup(SPI1, 8000000, 20, 3.3);
     if (res < 0) {
-        log_e("Failed to setup dac!");
+        log_e("Failed to setup DAC for DC-DC regulation!");
         return -ERROR_PERIPHERAL_SETUP_ERROR;
     }
+
 #endif
 
     /* Return success */
@@ -206,9 +253,13 @@ int power_setup(void) {
 }
 
 /**
- * @brief Finds the best contract offered by the various power providers.
- * @param[out] contract The best contract offered by USB PD.
- * @return 0 on success, negative error code otherwise.
+ * @brief Finds the best power contract from available power providers
+ *
+ * This function searches through all available power options and returns the one
+ * that offers the highest power.
+ *
+ * @param[out] contract The best power contract found
+ * @return 0 on success, -1 if no power options are available
  */
 int power_contract_get(struct power_option &contract) {
     float power_max;
@@ -252,9 +303,14 @@ int power_contract_get(struct power_option &contract) {
 }
 
 /**
- * @brief Finds the negotiated power limit.
- * @param[out] power_limit The negotiated power limit.
- * @return 0 on success, negative error code otherwise.
+ * @brief Gets the currently negotiated power limit from the best available contract
+ *
+ * This function retrieves the maximum power available from the best power contract
+ * that has been negotiated. It uses the power_contract_get() function to find the best
+ * option and then calculates the maximum power that option can provide.
+ *
+ * @param[out] power_limit The negotiated power limit in watts
+ * @return 0 on success, -1 if no power contract is available
  */
 int power_negotiated_power_limit_get(float &power_limit) {
 
@@ -274,9 +330,13 @@ int power_negotiated_power_limit_get(float &power_limit) {
 }
 
 /**
- * @brief Enables or disables the power supply.
- * @param[in] enabled Whether or not to enable the power supply.
- * @return 0 on success, negative error code otherwise.
+ * @brief Enables or disables the DC-DC converter supplying the tip with power
+ *
+ * This function controls the enable pin of the DC-DC converter to turn the power
+ * supply on or off. The specific pin used depends on the platform configuration.
+ *
+ * @param[in] enabled true to enable the power supply, false to disable
+ * @return 0 on success (always succeeds for now)
  */
 int power_enabled_set(const bool enabled) {
     if (enabled == true) {
@@ -302,8 +362,24 @@ int power_enabled_set(const bool enabled) {
 }
 
 /**
- * Main task of the power management module.
- * @return 0 on success, negative error code otherwise.
+ * @brief Main power management task - handles power negotiation and regulation
+ *
+ * This is the main power management function that should be called periodically
+ * from the main application loop. It handles:
+ * - Buck converter regulation based on available power
+ * - USB power negotiation state machine
+ * - Error handling and retry logic
+ *
+ * The power negotiation follows this priority order:
+ * 1. USB Type-C detection and orientation
+ * 2. USB Power Delivery (PD) negotiation
+ * 3. USB Battery Charging (BC1.2) detection
+ * 4. HVDCP (High Voltage Dedicated Charging Port) negotiation
+ *
+ * @return 0 on success, negative error code otherwise
+ *
+ * @note This function implements a state machine and should be called frequently to ensure timely power negotiation
+ * @see State machine documentation below for detailed flow
  */
 int power_task(void) {
     int res;
@@ -332,17 +408,41 @@ int power_task(void) {
         }
     }
 
-    /* Negotiation state machine that proceeds as follows:
+    /* Power Negotiation State Machine
      *
-     * 1) Try USB Type-C first to determine basic power capabilities
-     * 2) Try USB Power Delivery (PD):
-     *    - If PD offers power options, select best one and stay in PD_MONITOR state
-     *    - If PD doesn't offer anything, continue to step 3
-     * 3) Try USB Battery Charging (BC1.2):
-     *    - Determine charging capabilities (SDP/CDP/DCP)
-     *    - If DCP is detected, continue to step 4
-     *    - Otherwise, use BC1.2 power levels
-     * 4) Try Quick Charge (HVDCP) if DCP was detected */
+     * This state machine implements a hierarchical power negotiation strategy:
+     *
+     * 1) USB Type-C Detection (TC_0 → TC_1 → TC_2):
+     *    - Detect Type-C cable orientation
+     *    - Determine basic power capabilities (0.5A, 1.5A, 3.0A)
+     *    - Add Type-C power option to available options
+     *
+     * 2) USB Power Delivery Negotiation (PD_0 → PD_1 → PD_2 → PD_3 → PD_4):
+     *    - Attempt PD capability exchange
+     *    - Parse source capabilities
+     *    - Request best available PD contract
+     *    - If successful, monitor PD contract (PD_MONITOR)
+     *    - If failed, fall back to BC1.2 detection
+     *
+     * 3) USB Battery Charging Detection (BC_0 → BC_1 → BC_2 → BC_3 → BC_4):
+     *    - Detect charging port type (SDP/CDP/DCP)
+     *    - Determine available current (0.5A/1.5A/2.4A)
+     *    - Add BC1.2 power option to available options
+     *    - If DCP detected, attempt HVDCP negotiation
+     *
+     * 4) HVDCP Negotiation (QC_0 → QC_1 → ... → QC_7):
+     *    - Only attempted if DCP was detected in BC1.2 phase
+     *    - Negotiate higher voltages (12V, 9V)
+     *    - Monitor negotiated voltage (QC_MONITOR)
+     *
+     * 5) Completion (DONE):
+     *    - Power negotiation complete
+     *    - Power source that doesn't require monitoring is active
+     *
+     * Error Handling:
+     * - Each protocol has retry counters (m_errors_*)
+     * - After 5 retries, fall back to next protocol
+     * - If all protocols fail, return to IDLE state */
     static uint8_t m_errors_tc;
     static uint8_t m_errors_bc;
     static uint8_t m_errors_qc;
@@ -660,7 +760,7 @@ int power_task(void) {
                             }
 
                             default: {
-                                log_w("Received unsupported pdo.");
+                                log_w("Received unsupported pdo.");  // TODO: Add support for other pdo types?
                                 break;
                             }
                         }
@@ -902,7 +1002,9 @@ int power_task(void) {
                  * for example when another device unplugs from a multi-port charger. */
                 else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count > 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES)) {
 
-                    /* Parse each pdo */
+                    /* Parse each pdo looking for the most interesting one
+                     * For now we only handle fixed pdos
+                     * Ideally we want to find a pdo that gives us 45W with a voltage of less than 17V, but we can go up to 20V if needed */
                     double power_best = 0;
                     int8_t power_best_index = -1;
                     for (uint8_t i = 0; i < response.object_count; i++) {
@@ -932,10 +1034,8 @@ int power_task(void) {
                                 break;
                             }
 
-                                // TODO Add support for other pdo types
-
                             default: {
-                                log_w("Received unsupported pdo.");
+                                log_w("Received unsupported pdo.");  // TODO: Add support for other pdo types?
                                 break;
                             }
                         }
