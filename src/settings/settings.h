@@ -1,17 +1,27 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
-/* Project */
+/* Project headers */
 #include "errors/errors.h"
 
-/* C/C++ libraries */
+/* Config */
+#include "../../cfg/config.h"
+#ifndef CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS
+#define CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS 2000  //!< Delay before saving settings to EEPROM (in milliseconds)
+#endif
+
+/* C/C++ headers */
 #include <stddef.h>
 #include <stdint.h>
 
-/* */
+/* Setup */
 int settings_setup(void);
+
+/* Direct eeprom access */
 int settings_memory_read(const size_t address, uint8_t *const data, const size_t length);
 int settings_memory_wipe(void);
+
+/* Settings getters and setters */
 int settings_temperature_target_get(float &temperature_c);
 int settings_temperature_target_set(const float temperature_c);
 int settings_user_get(uint8_t *const icon, char *const line1, char *const line2);
@@ -24,5 +34,8 @@ int settings_interface_rotation_get(bool &left_handed);
 int settings_interface_rotation_set(const bool left_handed);
 int settings_display_brightness_get(int &percent);
 int settings_display_brightness_set(const int percent);
+
+/* Task */
+int settings_task(void);
 
 #endif

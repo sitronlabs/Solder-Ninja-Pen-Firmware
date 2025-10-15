@@ -15,8 +15,6 @@ static bool m_sleep_inactivity = false;
 static bool m_sleep_stand = false;
 static bool m_lock = false;
 static float m_target = 350;
-static bool m_target_changed = false;
-static uint32_t m_target_changed_timestamp;
 static bool m_boost_activated = false;
 static uint32_t m_boost_timestamp;
 
@@ -171,10 +169,8 @@ int app_target_increase(void) {
         m_boost_timestamp = millis();
     }
 
-    /* Save new target later on when the value has been stable for long enough
-     * in order to avoid too frequent eeprom writes */
-    m_target_changed = true;
-    m_target_changed_timestamp = millis();
+    /* Save new target to settings */
+    settings_temperature_target_set(m_target);
 
     /* Pass along */
     element_temperature_target_set(m_target);
@@ -204,10 +200,8 @@ int app_target_decrease(void) {
         m_boost_activated = false;
     }
 
-    /* Save new target later on when the value has been stable for long enough
-     * in order to avoid too frequent eeprom writes */
-    m_target_changed = true;
-    m_target_changed_timestamp = millis();
+    /* Save new target to settings */
+    settings_temperature_target_set(m_target);
 
     /* Pass along */
     element_temperature_target_set(m_target);
@@ -251,16 +245,6 @@ int app_task(void) {
             element_temperature_target_set(m_target);
         }
         m_boost_activated = false;
-    }
-
-    /* Save tartget temperature when stable */
-    if ((m_target_changed == true) && (millis() - m_target_changed_timestamp >= 500)) {
-        if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
-            settings_temperature_target_set(CONFIG_APP_TARGET_MAX_SAFE);
-        } else {
-            settings_temperature_target_set(m_target);
-        }
-        m_target_changed = false;
     }
 
     /* Return success */

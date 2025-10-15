@@ -1,11 +1,11 @@
 /* Self header */
 #include "settings.h"
 
-/* Project */
-#include "errors/errors.h"
+/* Project headers */
 #include "log/log.h"
 
-/* Arduino libraries */
+/* Arduino headers */
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <StreamUtils.h>
 #include <m24c64.h>
@@ -13,22 +13,27 @@
 /* Peripherals */
 static m24c64 m_eeprom;
 
-/* */
+/* Json document */
 StaticJsonDocument<1024> m_doc;
 
-static bool m_cached = false;
+/* Settings state machine */
+static enum {
+    STATE_0_LOAD,
+    STATE_1_IDLE,
+    STATE_2_SAVE,
+    STATE_ERROR,
+} m_sm;
+
+/* Settings modified */
+static bool m_modified;
+static uint32_t m_modified_timestamp;
 
 /**
  * @brief
  * @param
  * @return
  */
-static int m_unpack(void) {
-
-    /* Don't do it again if already cached */
-    if (m_cached == true) {
-        return 0;
-    }
+static int m_eeprom_unpack(void) {
 
     /* Read from memory */
     m_eeprom.seek_read(0);
@@ -48,22 +53,17 @@ static int m_unpack(void) {
         }
     }
 
-    /* Flag as cached */
-    m_cached = true;
-
     /* Return success */
     return 0;
 }
 
 /**
- *
+ * @brief Marks settings as modified and schedules save operation
+ * @return 0 on success, negative error code otherwise
  */
-static int m_repack(void) {
+static int m_eeprom_repack(void) {
 
-    /* Invalidate cache */
-    m_cached = false;
-
-    /* Write to memory */
+    /* Commit settings to EEPROM */
     m_eeprom.seek_write(0);
     WriteBufferingStream m_eeprom_buffered(m_eeprom, 32);
     serializeMsgPack(m_doc, m_eeprom_buffered);
@@ -71,6 +71,56 @@ static int m_repack(void) {
 
     /* Return success */
     return 0;
+}
+
+/**
+ * @brief Tries to ensure settings are loaded from EEPROM
+ *
+ * This function attempts to load settings if they haven't been loaded yet.
+ * This speeds up subsequent task calls by proactively loading settings
+ * when getter functions are called.
+ *
+ * @note This may not be the best architecture practice as it mixes
+ *       state machine logic with immediate loading, but it improves
+ *       responsiveness for the common case of accessing settings.
+ *
+ * @return 1 if settings are loaded, 0 if not yet loaded, negative error code if loading failed
+ */
+static int m_settings_ensure_loaded(void) {
+    int res;
+
+    /* Try to ensure settings are loaded */
+    while (m_sm != STATE_1_IDLE) {
+        switch (m_sm) {
+            case STATE_0_LOAD: {
+                res = settings_task();
+                if (res < 0) {
+                    log_e("Failed to load settings!");
+                    m_sm = STATE_ERROR;
+                    return -1;
+                }
+                log_d("Settings loaded successfully");
+                break;
+            }
+
+            case STATE_ERROR: {
+                return -1;
+            }
+
+            case STATE_2_SAVE: {
+                /* Settings are loaded but being saved, return success */
+                return 1;
+            }
+
+            default: {
+                log_e("Unknown state machine state!");
+                return -1;
+            }
+        }
+    }
+
+    /* Settings are loaded and ready */
+    return 1;
 }
 
 /**
@@ -86,11 +136,10 @@ int settings_setup(void) {
         return -1;
     }
 
-    /* Ensure eeprom is detected */
-    if (m_eeprom.detect() != true) {
-        log_e("Failed to detect eeprom!");
-        return -1;
-    }
+    /* Initialize working variables */
+    m_sm = STATE_0_LOAD;
+    m_modified = false;
+    m_modified_timestamp = 0;
 
     /* Return success */
     return 0;
@@ -110,9 +159,6 @@ int settings_memory_read(const size_t address, uint8_t *const data, const size_t
  */
 int settings_memory_wipe(void) {
     int res;
-
-    /* Invalidate cache */
-    m_cached = false;
 
     /* Set empty document */
     static const char empty[] = "{}";
@@ -144,10 +190,10 @@ int settings_memory_wipe(void) {
 int settings_temperature_target_get(float &temperature_c) {
     int res;
 
-    /* Load json document */
-    res = m_unpack();
-    if (res < 0) {
-        return -1;
+    /* Ensure settings are loaded */
+    res = m_settings_ensure_loaded();
+    if (res <= 0) {
+        return -EAGAIN;
     }
 
     /* Return if found */
@@ -166,17 +212,14 @@ int settings_temperature_target_get(float &temperature_c) {
  * @return
  */
 int settings_temperature_target_set(const float temperature_c) {
-    int res;
 
     /* Update json document */
     m_doc["temperature"]["unit"] = "C";
     m_doc["temperature"]["value"] = temperature_c;
 
-    /* Save it */
-    res = m_repack();
-    if (res < 0) {
-        return -1;
-    }
+    /* Mark settings as modified and record timestamp */
+    m_modified = true;
+    m_modified_timestamp = millis();
 
     /* Return success */
     return 0;
@@ -192,10 +235,10 @@ int settings_temperature_target_set(const float temperature_c) {
 int settings_user_get(uint8_t *const icon, char *const line1, char *const line2) {
     int res;
 
-    /* Load json document */
-    res = m_unpack();
-    if (res < 0) {
-        return -1;
+    /* Ensure settings are loaded */
+    res = m_settings_ensure_loaded();
+    if (res <= 0) {
+        return -EAGAIN;
     }
 
     /* Handle icon */
@@ -232,7 +275,6 @@ int settings_user_get(uint8_t *const icon, char *const line1, char *const line2)
  * @return
  */
 int settings_user_set(const uint8_t icon[32], const char *line1, const char *line2) {
-    int res;
 
     /* Update json document */
     for (size_t i = 0; i < 32; i++) {
@@ -241,11 +283,9 @@ int settings_user_set(const uint8_t icon[32], const char *line1, const char *lin
     m_doc["user"]["name"][0] = line1;
     m_doc["user"]["name"][1] = line2;
 
-    /* Save it */
-    res = m_repack();
-    if (res < 0) {
-        return -1;
-    }
+    /* Mark settings as modified and record timestamp */
+    m_modified = true;
+    m_modified_timestamp = millis();
 
     /* Return success */
     return 0;
@@ -260,13 +300,13 @@ int settings_user_set(const uint8_t icon[32], const char *line1, const char *lin
 int settings_product_get(char *const product_number, char *const serial_number) {
     int res;
 
-    /* Load json document */
-    res = m_unpack();
-    if (res < 0) {
-        return -1;
+    /* Ensure settings are loaded */
+    res = m_settings_ensure_loaded();
+    if (res <= 0) {
+        return -EAGAIN;
     }
 
-    /* */
+    /* Return if found */
     const char *pn = m_doc["product"]["product_number"];
     const char *sn = m_doc["product"]["serial_number"];
     if (((m_doc["product"].containsKey("product_number") != true) || (strlen(pn) > 12)) ||  //
@@ -289,23 +329,20 @@ int settings_product_get(char *const product_number, char *const serial_number) 
  * @return
  */
 int settings_product_set(const char *const product_number, const char *const serial_number) {
-    int res;
 
-    /* */
+    /* Ensure valid product number and serial number */
     if ((strlen(product_number) > 12) ||  //
         (strlen(serial_number) > 12)) {
         return -EINVAL;
     }
 
-    /* */
+    /* Update json document */
     m_doc["product"]["product_number"] = product_number;
     m_doc["product"]["serial_number"] = serial_number;
 
-    /* Save it */
-    res = m_repack();
-    if (res < 0) {
-        return -1;
-    }
+    /* Mark settings as modified and record timestamp */
+    m_modified = true;
+    m_modified_timestamp = millis();
 
     /* Return success */
     return 0;
@@ -319,10 +356,10 @@ int settings_product_set(const char *const product_number, const char *const ser
 int settings_interface_units_get(bool &fahrenheit) {
     int res;
 
-    /* Load json document */
-    res = m_unpack();
-    if (res < 0) {
-        return -1;
+    /* Ensure settings are loaded */
+    res = m_settings_ensure_loaded();
+    if (res <= 0) {
+        return -EAGAIN;
     }
 
     /* Return if found */
@@ -341,16 +378,13 @@ int settings_interface_units_get(bool &fahrenheit) {
  * @return
  */
 int settings_interface_units_set(const bool fahrenheit) {
-    int res;
 
-    /* */
+    /* Update json document */
     m_doc["interface"]["units"] = fahrenheit ? 1 : 0;
 
-    /* Save it */
-    res = m_repack();
-    if (res < 0) {
-        return -1;
-    }
+    /* Mark settings as modified and record timestamp */
+    m_modified = true;
+    m_modified_timestamp = millis();
 
     /* Return success */
     return 0;
@@ -364,10 +398,10 @@ int settings_interface_units_set(const bool fahrenheit) {
 int settings_interface_rotation_get(bool &left_handed) {
     int res;
 
-    /* Load json document */
-    res = m_unpack();
-    if (res < 0) {
-        return -1;
+    /* Ensure settings are loaded */
+    res = m_settings_ensure_loaded();
+    if (res <= 0) {
+        return -EAGAIN;
     }
 
     /* Return if found */
@@ -386,16 +420,13 @@ int settings_interface_rotation_get(bool &left_handed) {
  * @return
  */
 int settings_interface_rotation_set(const bool left_handed) {
-    int res;
 
-    /* */
+    /* Update json document */
     m_doc["interface"]["rotation"] = (left_handed) ? 1 : 0;
 
-    /* Save it */
-    res = m_repack();
-    if (res < 0) {
-        return -1;
-    }
+    /* Mark settings as modified and record timestamp */
+    m_modified = true;
+    m_modified_timestamp = millis();
 
     /* Return success */
     return 0;
@@ -409,10 +440,10 @@ int settings_interface_rotation_set(const bool left_handed) {
 int settings_display_brightness_get(int &percent) {
     int res;
 
-    /* Load json document */
-    res = m_unpack();
-    if (res < 0) {
-        return -1;
+    /* Ensure settings are loaded */
+    res = m_settings_ensure_loaded();
+    if (res <= 0) {
+        return -EAGAIN;
     }
 
     /* Return if found */
@@ -436,21 +467,103 @@ int settings_display_brightness_get(int &percent) {
  * @return
  */
 int settings_display_brightness_set(const int percent) {
-    int res;
 
-    /* */
+    /* Ensure valid brightness */
     if ((percent < 10) ||  //
         (percent > 100)) {
         return -EINVAL;
     }
 
-    /* */
+    /* Update json document */
     m_doc["display"]["brightness"] = percent;
 
-    /* Save it */
-    res = m_repack();
-    if (res < 0) {
-        return -1;
+    /* Mark settings as modified and record timestamp */
+    m_modified = true;
+    m_modified_timestamp = millis();
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Settings management task - handles loading and saving settings
+ *
+ * This function implements a state machine that:
+ * 1. Loads settings from EEPROM on startup
+ * 2. Waits in idle state while settings are being used
+ * 3. Saves settings to EEPROM after a delay when they are modified
+ *
+ * @return 0 on success, negative error code otherwise
+ */
+int settings_task(void) {
+    int res;
+
+    switch (m_sm) {
+
+        case STATE_0_LOAD: {
+
+            /* Ensure eeprom is detected */
+            if (m_eeprom.detect() != true) {
+                log_e("Failed to detect eeprom!");
+                m_sm = STATE_ERROR;
+                break;
+            }
+
+            /* Load settings from EEPROM */
+            res = m_eeprom_unpack();
+            if (res < 0) {
+                log_e("Failed to load settings from EEPROM!");
+                m_sm = STATE_ERROR;
+                break;
+            }
+
+            /* Move to idle state */
+            m_sm = STATE_1_IDLE;
+            log_d("Settings loaded successfully");
+            break;
+        }
+
+        case STATE_1_IDLE: {
+
+            /* Wait for settings to be marked as modified */
+            if (m_modified == false) {
+                break;
+            }
+
+            /* Check if enough time has passed since last modification */
+            if ((millis() - m_modified_timestamp) < CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS) {
+                break;
+            }
+
+            /* Move to save state */
+            m_sm = STATE_2_SAVE;
+            break;
+        }
+
+        case STATE_2_SAVE: {
+
+            /* Commit settings to EEPROM */
+            res = m_eeprom_repack();
+            if (res < 0) {
+                log_e("Failed to commit settings to EEPROM!");
+                m_sm = STATE_ERROR;
+                break;
+            }
+
+            /* Clear modified flag */
+            m_modified = false;
+
+            /* Return to idle state */
+            m_sm = STATE_1_IDLE;
+            log_d("Settings saved to EEPROM");
+            break;
+        }
+
+        default: {
+            log_e("Hurray, we found a cosmic ray!");
+            m_sm = STATE_0_LOAD;
+            return -1;
+        }
     }
 
     /* Return success */

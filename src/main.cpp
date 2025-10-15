@@ -89,6 +89,9 @@ void loop(void) {
     /* Communication task */
     com_task();
 
+    /* Settings task */
+    settings_task();
+
     /* Log task */
     log_task();
 
