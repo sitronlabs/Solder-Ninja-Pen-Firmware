@@ -8,9 +8,9 @@
 #define CONFIG_APP_BOOST_DURATION_LIMIT 30000  //!< Amount of time after which the boost will end (in milliseconds).
 
 /* Accelerometer config */
-#define CONFIG_ACCEL_IDLE_TIME 10000                   //!< Time after which no movement of the device will be interpreted as inactivity (in milliseconds).
-#define CONFIG_ACCEL_IDLE_ACCELERATION_TRESHOLD 0.160  //!< Threshold under which acceleration will not be registered as movement (in g, after high pass filter).
-#define CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD 0.336  //!< Threshold under which acceleration will be considered as free-fall (in g, absolute).
+#define CONFIG_ACCEL_IDLE_TIME 10000                    //!< Time after which no movement of the device will be interpreted as inactivity (in milliseconds).
+#define CONFIG_ACCEL_IDLE_ACCELERATION_THRESHOLD 0.160  //!< Threshold under which acceleration will not be registered as movement (in g, after high pass filter).
+#define CONFIG_ACCEL_FALL_ACCELERATION_THRESHOLD 0.336  //!< Threshold under which acceleration will be considered as free-fall (in g, absolute).
 
 /* Buttons config */
 #define CONFIG_BUTTONS_PRESS_SHORT_DURATION 30                    //!<

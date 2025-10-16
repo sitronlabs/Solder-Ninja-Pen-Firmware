@@ -969,6 +969,7 @@ int interface_task(void) {
             /* That's it */
             break;
         }
+
         default: {
             log_e("Unexpected state!");
             m_sm = STATE_SPLASH_0;

@@ -43,7 +43,7 @@ int buttons_setup(void) {
 
 enum buttons_event buttons_event_get(void) {
 
-    /* Retrieve pending event*/
+    /* Retrieve pending event */
     enum buttons_event ret = m_event;
 
     /* Handle inversion if interface is rotated */

@@ -135,13 +135,13 @@ int accelerometer_task(void) {
             if (reg_act_dur > 255) {
                 reg_act_dur = 255;
             }
-            float reg_act_ths = (1000 * CONFIG_ACCEL_IDLE_ACCELERATION_TRESHOLD) / 16.0;
+            float reg_act_ths = (1000 * CONFIG_ACCEL_IDLE_ACCELERATION_THRESHOLD) / 16.0;
             if (reg_act_ths < 0) {
                 reg_act_ths = 1;
             } else if (reg_act_ths > 255) {
                 reg_act_ths = 255;
             }
-            float reg_fall_ths = (1000 * CONFIG_ACCEL_FALL_ACCELERATION_TRESHOLD) / 16.0;
+            float reg_fall_ths = (1000 * CONFIG_ACCEL_FALL_ACCELERATION_THRESHOLD) / 16.0;
             if (reg_fall_ths < 0) {
                 reg_fall_ths = 1;
             } else if (reg_fall_ths > 255) {
