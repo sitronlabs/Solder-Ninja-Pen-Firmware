@@ -6,6 +6,9 @@
 
 /* Config */
 #include "../../cfg/config.h"
+#ifndef CONFIG_SETTINGS_JSON_DOCUMENT_SIZE
+#define CONFIG_SETTINGS_JSON_DOCUMENT_SIZE 1024  //!< Size of the JSON document buffer (in bytes)
+#endif
 #ifndef CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS
 #define CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS 2000  //!< Delay before saving settings to EEPROM (in milliseconds)
 #endif

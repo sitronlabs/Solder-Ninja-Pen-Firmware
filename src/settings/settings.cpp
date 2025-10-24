@@ -14,7 +14,7 @@
 static m24c64 m_eeprom;
 
 /* Json document */
-StaticJsonDocument<1024> m_doc;
+StaticJsonDocument<CONFIG_SETTINGS_JSON_DOCUMENT_SIZE> m_doc;
 
 /* Settings state machine */
 static enum {
