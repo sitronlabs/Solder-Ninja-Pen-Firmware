@@ -4,6 +4,7 @@
 #include "interface/interface.h"
 #include "log/log.h"
 #include "settings/settings.h"
+#include "watchdog/watchdog.h"
 
 /* Arduino libraries */
 #include <Arduino.h>
@@ -66,6 +67,12 @@ void setup(void) {
     if (res < 0) {
         log_e("Failed to setup communication task!");
     }
+
+    /* Setup watchdog */
+    res = watchdog_setup();
+    if (res < 0) {
+        log_e("Failed to setup watchdog task!");
+    }
 }
 
 /*
@@ -84,4 +91,7 @@ void loop(void) {
 
     /* Log task */
     log_task();
+
+    /* Watchdog task */
+    watchdog_task();
 }
