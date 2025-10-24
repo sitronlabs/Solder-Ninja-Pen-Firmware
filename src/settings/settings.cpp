@@ -146,18 +146,47 @@ int settings_setup(void) {
 }
 
 /**
- * @brief
- * @return
+ * @brief Read data from the EEPROM memory
+ *
+ * This function provides a low-level interface to read raw data from the EEPROM.
+ *
+ * @param address The starting address in EEPROM to read from
+ * @param data    Pointer to buffer where read data will be stored
+ * @param length  Number of bytes to read from EEPROM
+ * @return number of bytes successfully read, or negative error code on failure
  */
-int settings_memory_read(const size_t address, uint8_t *const data, const size_t length) {
+int settings_eeprom_read(const size_t address, uint8_t *const data, const size_t length) {
     return m_eeprom.read(address, data, length);
 }
 
 /**
- * @brief
- * @return
+ * @brief Write data to the EEPROM memory
+ *
+ * This function provides a low-level interface to write raw data to the EEPROM.
+ *
+ * @param address The starting address in EEPROM to write to
+ * @param data    Pointer to buffer containing data to write
+ * @param length  Number of bytes to write to EEPROM
+ * @return number of bytes successfully written, or negative error code on failure
  */
-int settings_memory_wipe(void) {
+int settings_eeprom_write(const size_t address, const uint8_t *const data, const size_t length) {
+    return m_eeprom.write(address, data, length);
+}
+
+/**
+ * @brief Completely erase all EEPROM contents and reset settings to defaults
+ *
+ * This function performs a complete wipe of the EEPROM memory by writing 0xFF
+ * to all memory locations. It also resets the internal JSON document to an
+ * empty state. This operation is irreversible and will permanently delete
+ * all stored settings and configuration data.
+ *
+ * @warning This function takes around 1 second to complete. Call with caution
+ * as it won't play nice with code that requires strict timing.
+ *
+ * @return 0 on successful completion, negative error code on failure
+ */
+int settings_eeprom_wipe(void) {
     int res;
 
     /* Set empty document */
@@ -169,11 +198,13 @@ int settings_memory_wipe(void) {
     }
 
     /* Wipe eeprom contents
-     * @todo Prevent wipe while heating is turned on because it takes way too long in the current implementation */
-    for (size_t i = 0; i < 8192U; i++) {
-        uint8_t clear = 0xFF;
-        res = m_eeprom.write(i, &clear, 1);
+     * @note This may take around 1 second to complete */
+    uint8_t chunk[m_eeprom.size_page_get()];
+    memset(chunk, 0xFF, sizeof(chunk));
+    for (size_t i = 0; i < m_eeprom.size_total_get(); i += sizeof(chunk)) {
+        res = m_eeprom.write(i, chunk, sizeof(chunk));
         if (res < 0) {
+            log_e("Failed to clear eeprom page!");
             return -EIO;
         }
     }

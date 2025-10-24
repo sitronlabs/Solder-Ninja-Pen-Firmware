@@ -18,8 +18,9 @@
 int settings_setup(void);
 
 /* Direct eeprom access */
-int settings_memory_read(const size_t address, uint8_t *const data, const size_t length);
-int settings_memory_wipe(void);
+int settings_eeprom_read(const size_t address, uint8_t *const data, const size_t length);
+int settings_eeprom_write(const size_t address, const uint8_t *const data, const size_t length);
+int settings_eeprom_wipe(void);
 
 /* Settings getters and setters */
 int settings_temperature_target_get(float &temperature_c);

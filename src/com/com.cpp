@@ -54,37 +54,152 @@ int com_command_process(const char *const str, const size_t len) {
         Serial.println();
     }
 
-    /* Command to dump settings */
-    else if (doc[F("action")] == F("settings_memory_dump")) {
+    /* Command to dump eeprom contents */
+    else if (doc[F("action")] == F("settings_eeprom_dump")) {
+
+        /* Start response */
         Serial.print("{\"settings\": [");
+
+        /* Read eeprom by chunks of arbitrary size to speed up reading while avoiding large memory allocations */
         bool failure = false;
         bool comma = false;
         for (size_t i = 0;;) {
-            uint8_t data[32];
-            res = settings_memory_read(i, data, 32);
+
+            /* Build chunk */
+            uint8_t chunk[32];
+            res = settings_eeprom_read(0 + i, chunk, 32);
             if (res == 0 || res == -EINVAL) {
                 break;
             } else if (res < 0) {
                 failure = true;
                 break;
             } else {
+
+                /* Append contents of chunk to response */
                 for (size_t j = 0; j < (size_t)res; j++) {
                     if (comma == false) {
-                        Serial.printf("%u", data[j]);
+                        Serial.printf("%" PRIu8, chunk[j]);
                         comma = true;
                     } else {
-                        Serial.printf(",%u", data[j]);
+                        Serial.printf(",%" PRIu8, chunk[j]);
                     }
                 }
+
+                /* Increment the number of bytes read so far */
                 i += res;
             }
         }
+
+        /* End response */
         Serial.printf("], \"result\": \"%s\"}\r\n", failure ? "failure" : "success");
     }
 
-    /* Command to wipe settings */
-    else if (doc[F("action")] == F("settings_memory_wipe")) {
-        res = settings_memory_wipe();
+    /* Command to read from eeprom */
+    else if (doc[F("action")] == F("settings_eeprom_read")) {
+
+        /* Validate address */
+        const size_t address = doc["address"] | 0;
+        if (address < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"Invalid address!\"]}"));
+            return 0;
+        }
+
+        /* Validate length */
+        const size_t length = doc["length"] | 0;
+        if (length < 1) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"Invalid length!\"]}"));
+            return 0;
+        }
+
+        /* Start response */
+        Serial.print("{\"settings\": [");
+
+        /* Read eeprom by chunks of arbitrary size to speed up reading while avoiding large memory allocations */
+        bool failure = false;
+        bool comma = false;
+        for (size_t i = 0; i < length;) {
+
+            /* Build chunk */
+            uint8_t chunk[32];
+            size_t chunk_length = (length - i > 32) ? 32 : length - i;
+            res = settings_eeprom_read(address + i, chunk, chunk_length);
+            if (res == 0 || res == -EINVAL) {
+                break;
+            } else if (res < 0) {
+                failure = true;
+                break;
+            } else {
+
+                /* Append contents of chunk to response */
+                for (size_t j = 0; j < (size_t)res; j++) {
+                    if (comma == false) {
+                        Serial.printf("%" PRIu8, chunk[j]);
+                        comma = true;
+                    } else {
+                        Serial.printf(",%" PRIu8, chunk[j]);
+                    }
+                }
+
+                /* Increment the number of bytes read so far */
+                i += res;
+            }
+        }
+
+        /* End response */
+        Serial.printf("], \"result\": \"%s\"}\r\n", failure ? "failure" : "success");
+    }
+
+    /* Command to write to eeprom */
+    else if (doc[F("action")] == F("settings_eeprom_write")) {
+
+        /* Validate address */
+        const size_t address = doc["address"] | 0;
+        if (address < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"Invalid address!\"]}"));
+            return 0;
+        }
+
+        /* Validate data array */
+        JsonArray data = doc["data"].as<JsonArray>();
+        if (data.isNull()) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"No data array!\"]}"));
+            return 0;
+        }
+        const size_t length = data.size() | 0;
+        if (length < 1) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"Data array is empty!\"]}"));
+            return 0;
+        }
+
+        /* Write to eeprom by chunks sufficiently large to benefit of page write operations */
+        bool failure = false;
+        for (size_t i = 0; i < length;) {
+
+            /* Build chunk */
+            uint8_t chunk[128];
+            size_t chunk_length = (length - i > 128) ? 128 : length - i;
+            for (size_t j = 0; j < chunk_length; j++) {
+                chunk[j] = data[i + j].as<uint8_t>();
+            }
+
+            /* Write chunk */
+            res = settings_eeprom_write(address + i, chunk, chunk_length);
+            if (res < 0) {
+                failure = true;
+                break;
+            }
+
+            /* Increment the number of bytes written so far */
+            i += chunk_length;
+        }
+
+        /* Send response */
+        Serial.printf("{\"result\": \"%s\"}\r\n", failure ? "failure" : "success");
+    }
+
+    /* Command to wipe eeprom */
+    else if (doc[F("action")] == F("settings_eeprom_wipe")) {
+        res = settings_eeprom_wipe();
         if (res == 0) {
             Serial.println("{\"result\":\"success\"}");
         } else {
