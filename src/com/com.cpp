@@ -40,8 +40,8 @@ int com_command_process(const char *const str, const size_t len) {
     static StaticJsonDocument<4 * CONFIG_COMMAND_LENGTH_LIMIT> doc;
     DeserializationError json_res = deserializeJson(doc, str, len);
     if (json_res != DeserializationError::Ok) {
-        Serial.println("{\"result\":\"failure\", \"errors\" : [\"Failed to parse command!\"]}");
-        log_e("Failed to parse command json (%d)!", json_res.code());
+        Serial.printf("{\"result\":\"failure\", \"errors\" : [\"Failed to parse command (%s)!\"]}\r\n", json_res.c_str());
+        log_e("Failed to parse command json (%s)!", json_res.c_str());
         return -1;
     }
 
