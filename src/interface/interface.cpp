@@ -258,9 +258,10 @@ int interface_task(void) {
 
             /* Retrieve product information,
              * Or skip if not avaiable */
-            char product_number[12 + 1];
-            char serial_number[12 + 1];
-            res = settings_product_get(product_number, serial_number);  // TODO Change to prevent overflow
+            char number[CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH + 1] = {0};
+            char revision[CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH + 1] = {0};
+            char serial[CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH + 1] = {0};
+            res = settings_product_get(number, revision, serial);
             if (res != 1) {
                 m_sm = STATE_USER_0;
                 break;
@@ -271,9 +272,9 @@ int interface_task(void) {
             m_library.drawBitmap(0, 0, k_icon_serialnumber.data, k_icon_serialnumber.width, k_icon_serialnumber.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
-            m_library.printf(product_number);
+            m_library.printf(number);
             m_library.setCursor(20, 9);
-            m_library.print(serial_number);
+            m_library.print(serial);
             m_library.display();
 
             /* Move on */
@@ -298,10 +299,10 @@ int interface_task(void) {
 
             /* Retrieve user information,
              * Or skip if not avaiable */
-            uint8_t icon[32];
-            char text_line1[12 + 1];
-            char text_line2[12 + 1];
-            res = settings_user_get(icon, text_line1, text_line2);  // TODO Change to prevent overflow
+            uint8_t icon[32] = {0};
+            char text_line1[CONFIG_SETTINGS_USERNAME_LINE1_MAX_LENGTH + 1] = {0};
+            char text_line2[CONFIG_SETTINGS_USERNAME_LINE2_MAX_LENGTH + 1] = {0};
+            res = settings_user_get(icon, text_line1, text_line2);
             if (res != 1) {
                 m_sm = STATE_MONITOR_REDIRECT;
                 break;
@@ -353,7 +354,7 @@ int interface_task(void) {
                 }
                 default: {
                     m_sm = STATE_SPLASH_0;
-                    return -ERROR_STATE_UNEXPECTED;
+                    return -ERROR_GENERIC_STATE_UNEXPECTED;
                 }
             }
             break;
@@ -963,7 +964,7 @@ int interface_task(void) {
         default: {
             log_e("Unexpected state!");
             m_sm = STATE_SPLASH_0;
-            return -ERROR_STATE_UNEXPECTED;
+            return -ERROR_GENERIC_STATE_UNEXPECTED;
         }
     }
 

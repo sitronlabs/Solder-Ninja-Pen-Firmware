@@ -16,143 +16,699 @@ static m24c64 m_eeprom;
 /* Json document */
 StaticJsonDocument<CONFIG_SETTINGS_JSON_DOCUMENT_SIZE> m_doc;
 
-/* Settings state machine */
-static enum {
-    STATE_0_LOAD,
-    STATE_1_IDLE,
-    STATE_2_SAVE,
-    STATE_ERROR,
-} m_sm;
-
-/* Settings modified */
-static bool m_modified;
-static uint32_t m_modified_timestamp;
+/* Internal variables */
+static bool m_loaded;                  //!< Flag indicating that settings have been loaded
+static bool m_modified;                //!< Flag indicating that settings have been modified
+static bool m_modified_immediate;      //!< Flag indicating that settings should be saved immediately
+static uint32_t m_modified_timestamp;  //!< Timestamp of last modification used for deferred saving
+static bool m_eeprom_available;        //!< Flag indicating that eeprom is available
+static struct {
+    size_t start;    //!< Start address of the eeprom copy
+    size_t size;     //!< Size of the eeprom copy
+} m_eeprom_copy[2];  //!< Eeprom copies A and B
 
 /**
- * @brief
- * @param
- * @return
+ * @brief Computes the CRC-8 of a given data buffer.
+ *
+ * This function implements the CRC-8 algorithm as used by CDMA2000.
+ * The parameters used are:
+ *   - Polynomial: 0x9B (x^8 + x^7 + x^4 + x^3 + x + 1)
+ *   - Initial value: 0xFF
+ *   - Input and output are not reflected
+ *   - No final XOR (XorOut = 0x00)
+ *
+ * @param[in] data   Pointer to the input data buffer.
+ * @param[in] length Number of bytes in the buffer to process.
+ * @return Calculated 8-bit CRC value.
+ *
+ * @see http://www.sunshine2k.de/articles/coding/crc/understanding_crc.html#ch43 for implementation code reference
+ * @see https://users.ece.cmu.edu/~koopman/crc/crc8.html for performance of the chosen polynomial
+ * @see http://www.sunshine2k.de/coding/javascript/crc/crc_js.html for testing
  */
-static int m_eeprom_unpack(void) {
+static uint8_t m_crc8(const void *const data, const size_t length) {
+    const uint8_t polynomial = 0x9B;
+    uint8_t crc = 0xFF;
 
-    /* Read from memory */
-    m_eeprom.seek_read(0);
-    DeserializationError unpack_res = deserializeMsgPack(m_doc, m_eeprom);
-    if (unpack_res != DeserializationError::Ok) {
-        log_e("Failed to deserialize!");
-        return -1;
-    }
+    /* Process each byte in the data buffer */
+    for (size_t i = 0; i < length; i++) {
+        crc ^= ((uint8_t *)data)[i];
 
-    /* Dirty fix for when the document is empty */
-    if (m_doc.memoryUsage() == 0) {
-        static const char fix[] = "{}";
-        DeserializationError unpack_res = deserializeJson(m_doc, (char *)(&fix[0]));
-        if (unpack_res != DeserializationError::Ok) {
-            log_e("Failed to create empty document (%d)!", unpack_res.code());
-            return -1;
+        /* Process each bit in the current byte */
+        for (uint8_t j = 0; j < 8; j++) {
+            if ((crc & 0x80) != 0) {
+                crc = (uint8_t)((crc << 1) ^ polynomial);
+            } else {
+                crc <<= 1;
+            }
         }
     }
 
-    /* Return success */
-    return 0;
+    /* Return calculated CRC */
+    return crc;
 }
 
 /**
- * @brief Marks settings as modified and schedules save operation
- * @return 0 on success, negative error code otherwise
+ * @brief Computes the CRC-32 of a given data buffer.
+ *
+ * This function implements the CRC-32Q algorithm, which uses the following parameters:
+ *   - Polynomial: 0x814141AB (x^32 + x^31 + x^28 + x^27 + x^25 + x^24 + x^23 + ...)
+ *   - Initial value: Application provides @p initial (commonly 0x00000000)
+ *   - Reflection: No input or output reflection (RefIn = false, RefOut = false)
+ *   - Final XOR value: 0x00000000 (no final XOR)
+ *
+ * @param[in] initial Initial CRC value (commonly 0x00000000 for a new calculation).
+ * @param[in] data    Pointer to the input byte buffer to process.
+ * @param[in] length  Number of bytes to process from @p data.
+ * @return            The computed CRC-32Q value.
+ *
+ * @see http://www.sunshine2k.de/articles/coding/crc/understanding_crc.html#ch6 for implementation code reference
+ * @see https://users.ece.cmu.edu/~koopman/crc/crc32.html for performance of the chosen polynomial
+ * @see http://www.sunshine2k.de/coding/javascript/crc/crc_js.html for testing
  */
-static int m_eeprom_repack(void) {
+static uint32_t m_crc32(const uint32_t initial, const uint8_t *const data, const size_t length) {
+    const uint32_t polynomial = 0x814141AB;
+    uint32_t crc = initial;
 
-    /* Commit settings to EEPROM */
-    m_eeprom.seek_write(0);
-    WriteBufferingStream m_eeprom_buffered(m_eeprom, 32);
-    serializeMsgPack(m_doc, m_eeprom_buffered);
-    m_eeprom_buffered.flush();
+    /* Process each byte in the data buffer */
+    for (size_t i = 0; i < length; i++) {
+        /* Bring the next byte into the top-most 8 bits of crc */
+        crc ^= ((uint32_t)((uint8_t *)data)[i]) << 24;
 
-    /* Return success */
-    return 0;
+        /* Process each bit of the current byte */
+        for (int j = 0; j < 8; j++) {
+            if ((crc & 0x80000000) != 0) {
+                crc = (uint32_t)((crc << 1) ^ polynomial);
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc;
 }
 
 /**
- * @brief Tries to ensure settings are loaded from EEPROM
+ * @brief Struct that acts as a custom reader for eeprom with CRC-32 tracking.
  *
- * This function attempts to load settings if they haven't been loaded yet.
- * This speeds up subsequent task calls by proactively loading settings
- * when getter functions are called.
+ * This struct provides read methods compatible with ArduinoJson's custom Reader interface,
+ * enabling automatic calculation of a running CRC-32 value over all data read from eeprom.
  *
- * @note This may not be the best architecture practice as it mixes
- *       state machine logic with immediate loading, but it improves
- *       responsiveness for the common case of accessing settings.
- *
- * @return 1 if settings are loaded, 0 if not yet loaded, negative error code if loading failed
+ * @see https://arduinojson.org/v6/api/json/deserializejson/#custom-reader
  */
-static int m_settings_ensure_loaded(void) {
+static struct {
+    size_t index = 0;
+    uint32_t crc = 0;
+
+    /* Reads one byte, or returns -1 */
+    int read(void) {
+        uint8_t c;
+        int res = m_eeprom.read(index, &c, 1);
+        if (res < 0) {
+            log_e("Failed to read from eeprom!");
+            return -1;
+        }
+        crc = m_crc32(crc, &c, res);
+        index += res;
+        return c;
+    }
+
+    /* Reads several bytes, returns the number of bytes read. */
+    size_t readBytes(char *buffer, size_t length) {
+        int res = m_eeprom.read(index, (uint8_t *)buffer, length);
+        if (res < 0) {
+            log_e("Failed to read from eeprom!");
+            return 0;
+        }
+        crc = m_crc32(crc, (uint8_t *)buffer, res);
+        index += res;
+        return res;
+    }
+
+} m_eeprom_reader;
+
+/**
+ * @brief Struct that acts as a custom writer for eeprom with CRC-32 tracking.
+ *
+ * This struct provides write methods compatible with ArduinoJson's custom Writer interface,
+ * enabling automatic calculation of a running CRC-32 value over all data written to eeprom.
+ *
+ * @see https://arduinojson.org/v6/api/json/serializejson/#custom-writer
+ */
+static struct {
+    size_t index = 0;
+    uint32_t crc = 0;
+
+    /* Writes one byte, returns the number of bytes written (0 or 1) */
+    size_t write(uint8_t c) {
+        int res = m_eeprom.write(index, &c, 1);
+        if (res < 0) {
+            log_e("Failed to write to eeprom!");
+            return 0;
+        }
+        crc = m_crc32(crc, &c, res);
+        index += res;
+        return res;
+    }
+
+    /* Writes several bytes, returns the number of bytes written */
+    size_t write(const uint8_t *buffer, size_t length) {
+        int res = m_eeprom.write(index, buffer, length);
+        if (res < 0) {
+            log_e("Failed to write to eeprom!");
+            return 0;
+        }
+        crc = m_crc32(crc, buffer, res);
+        index += res;
+        return res;
+    }
+} m_eeprom_writer;
+
+/**
+ * @brief Load settings from EEPROM using a state machine approach
+ *
+ * This function implements a robust state machine to load settings from EEPROM
+ * with fallback mechanisms. It handles multiple scenarios including corrupted
+ * data, missing headers, and EEPROM unavailability. The function uses a
+ * dual-copy approach (A and B) for redundancy and data integrity.
+ *
+ * The state machine performs the following operations:
+ * - Validates EEPROM header and CRC
+ * - Attempts to load from copy A, then copy B if A fails
+ * - Rebuilds headers if necessary
+ *
+ * @return 0 on successful load, negative error code on failure
+ *
+ * @note This function is called internally during settings_setup()
+ */
+static int m_load(void) {
     int res;
 
-    /* Try to ensure settings are loaded */
-    while (m_sm != STATE_1_IDLE) {
-        switch (m_sm) {
-            case STATE_0_LOAD: {
-                res = settings_task();
-                if (res < 0) {
-                    log_e("Failed to load settings!");
-                    m_sm = STATE_ERROR;
-                    return -1;
+    /* State machine */
+    enum {
+        STATE_EEPROM_HEADER_VALIDATE,
+        STATE_EEPROM_HEADER_INJECT,
+        STATE_EEPROM_HEADER_REBUILD,
+        STATE_EEPROM_LOAD_COPYA,
+        STATE_EEPROM_LOAD_COPYB,
+        STATE_EEPROM_UNAVAILABLE,
+        STATE_FLASH_LOAD,
+        STATE_TRANSLATE,
+        STATE_DONE,
+    } m_load_sm = STATE_EEPROM_HEADER_VALIDATE;
+    while (true) {
+        switch (m_load_sm) {
+
+            case STATE_EEPROM_HEADER_VALIDATE: {
+
+                /* Detect eeprom */
+                m_eeprom_available = true;
+                if (m_eeprom.detect() != true) {
+                    log_e("Failed to detect eeprom!");
+                    m_load_sm = STATE_EEPROM_UNAVAILABLE;
+                    break;
                 }
-                log_d("Settings loaded successfully");
+
+                /* Read eeprom header. The expected layout is as follows:
+                 *  [  0] Header Version           (1 byte, uint8_t)                     = 1
+                 *  [  1] Header Length            (1 byte, uint8_t)                     = 32
+                 *  [  2] EEPROM Total Size        (4 bytes, uint32_t, big-endian)       = 8192
+                 *  [  6] EEPROM Page Size         (2 bytes, uint16_t, big-endian)       = 32
+                 *  [  8] EEPROM IC Name           (17 bytes, null-terminated char[17])  = "M24C64-FMH6TG"
+                 *  [ 25] Copy Count               (1 byte, uint8_t)                     = 2
+                 *  [ 26] Reserved                 (5 bytes, for future use and page alignment)
+                 *  [ 31] CRC-8                    (1 byte, uint8_t) */
+                uint8_t header[CONFIG_SETTINGS_EEPROM_HEADER_SIZE];
+                int res = m_eeprom.read(0, header, sizeof(header));
+                if (res < 0) {
+                    log_e("Failed to read eeprom header!");
+                    m_load_sm = STATE_EEPROM_UNAVAILABLE;
+                    break;
+                }
+
+                /* Parse header fields */
+                uint8_t header_version = header[0];
+                uint8_t header_length = header[1];
+                uint32_t eeprom_size_total = (header[2] << 24) | (header[3] << 16) | (header[4] << 8) | header[5];
+                uint16_t eeprom_size_page = (header[6] << 8) | header[7];
+                uint8_t copy_count = header[25];
+                uint8_t crc8 = header[31];
+
+                /* Validate header crc8 and fields */
+                bool header_valid = true;
+                uint8_t crc_computed = m_crc8(&header[0], CONFIG_SETTINGS_EEPROM_HEADER_SIZE - 1);
+                if (crc8 != crc_computed) {
+                    log_e("Invalid eeprom header crc8 (expected 0x%02X, got 0x%02X)!", crc_computed, crc8);
+                    header_valid = false;
+                }
+                if ((header_version != 1) ||
+                    (header_length != CONFIG_SETTINGS_EEPROM_HEADER_SIZE)) {
+                    log_e("Unexpected eeprom header version or length!");
+                    header_valid = false;
+                }
+                if ((eeprom_size_total != m_eeprom.size_total_get()) ||
+                    (eeprom_size_page != m_eeprom.size_page_get())) {
+                    log_e("Unexpected eeprom size!");
+                    header_valid = false;
+                }
+                if (copy_count != 2) {
+                    log_e("Unexpected copy count!");
+                    header_valid = false;
+                }
+
+                /* If the header is not valid, we rebuild it
+                 * because after all, we might be dealing with a corrupt header with valid data.*/
+                if (header_valid == false) {
+
+                    /* Early units had no header but instead a single messagepack document stored at address 0,
+                     * so if the first byte suggests a messagepack fixmap, we assume we are dealing with an early unit and attempt to inject a new header. */
+                    if ((header[0] >= 0x80) && (header[0] <= 0x8F)) {
+                        log_i("Early unit suspected, attempting to inject missing header.");
+                        m_load_sm = STATE_EEPROM_HEADER_INJECT;
+                        break;
+                    } else {
+                        m_load_sm = STATE_EEPROM_HEADER_REBUILD;
+                        break;
+                    }
+                }
+
+                /* Compute copy locations */
+                size_t eeprom_pages_total = m_eeprom.size_total_get() / m_eeprom.size_page_get();
+                size_t eeprom_pages_user_by_header = (CONFIG_SETTINGS_EEPROM_HEADER_SIZE + (m_eeprom.size_page_get() - 1)) / m_eeprom.size_page_get();
+                size_t eeprom_pages_left_for_copies = eeprom_pages_total - eeprom_pages_user_by_header;
+                size_t eeprom_pages_per_copy = eeprom_pages_left_for_copies / 2;
+                m_eeprom_copy[0].start = eeprom_pages_user_by_header * m_eeprom.size_page_get();
+                m_eeprom_copy[0].size = eeprom_pages_per_copy * m_eeprom.size_page_get();
+                m_eeprom_copy[1].start = m_eeprom_copy[0].start + m_eeprom_copy[0].size;
+                m_eeprom_copy[1].size = eeprom_pages_per_copy * m_eeprom.size_page_get();
+
+                /* Move on*/
+                m_load_sm = STATE_EEPROM_LOAD_COPYA;
                 break;
             }
 
-            case STATE_ERROR: {
-                return -1;
+            case STATE_EEPROM_HEADER_INJECT: {
+
+                /* Deserialize old settings
+                 * if not successful or if the document is empty, we give up and build a new header */
+                m_eeprom.seek_read(0);
+                DeserializationError unpack_res = deserializeMsgPack(m_doc, m_eeprom);
+                if (unpack_res != DeserializationError::Ok) {
+                    log_w("Failed to deserialize old settings (%s)!", unpack_res.c_str());
+                    m_doc.clear();
+                    m_load_sm = STATE_EEPROM_HEADER_REBUILD;
+                    break;
+                } else if (m_doc.memoryUsage() == 0) {
+                    log_w("Old settings were empty, skipping.");
+                    m_doc.clear();
+                    m_load_sm = STATE_EEPROM_HEADER_REBUILD;
+                    break;
+                }
+
+                /* If schema version is not specified, we force it to 1 */
+                if (m_doc["meta"]["schema_version"].is<int>() != true) {
+                    m_doc["meta"]["schema_version"] = 1;
+                }
+
+                /* Shift old settings after header */
+                m_eeprom_writer.index = CONFIG_SETTINGS_EEPROM_HEADER_SIZE;
+                m_eeprom_writer.crc = 0;
+                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+                if (repack_res <= 0) {
+                    log_e("Failed to shift to eeprom copy A!");
+                    m_load_sm = STATE_EEPROM_HEADER_REBUILD;
+                    break;
+                }
+                m_eeprom.seek_write(m_eeprom_writer.index);
+                m_eeprom.write(m_eeprom_writer.crc >> 24);
+                m_eeprom.write(m_eeprom_writer.crc >> 16);
+                m_eeprom.write(m_eeprom_writer.crc >> 8);
+                m_eeprom.write(m_eeprom_writer.crc >> 0);
+                log_i("Successfully shifted old settings to copy A.");
+
+                /* Move on */
+                m_load_sm = STATE_EEPROM_HEADER_REBUILD;
+                break;
             }
 
-            case STATE_2_SAVE: {
-                /* Settings are loaded but being saved, return success */
-                return 1;
+            case STATE_EEPROM_HEADER_REBUILD: {
+
+                /* Log */
+                log_i("Rebuilding eeprom header...");
+
+                /* Build header
+                 * Note, for now, all solder ninja products are expected to have a a M24C64 eeprom,
+                 * but later on this is where we could have fun attempting to detect the eeprom type and size */
+                uint8_t header[CONFIG_SETTINGS_EEPROM_HEADER_SIZE] = {0};
+                header[0] = 1;                                            // Header Version
+                header[1] = CONFIG_SETTINGS_EEPROM_HEADER_SIZE;           // Header Length
+                header[2] = ((uint32_t)m_eeprom.size_total_get()) >> 24;  // Eeprom Total Size
+                header[3] = ((uint32_t)m_eeprom.size_total_get()) >> 16;  // Eeprom Total Size
+                header[4] = ((uint32_t)m_eeprom.size_total_get()) >> 8;   // Eeprom Total Size
+                header[5] = ((uint32_t)m_eeprom.size_total_get()) >> 0;   // Eeprom Total Size
+                header[6] = ((uint32_t)m_eeprom.size_page_get()) >> 8;    // Eeprom Page Size
+                header[7] = ((uint32_t)m_eeprom.size_page_get()) >> 0;    // Eeprom Page Size
+                strlcpy((char *)&header[8], "M24C64-FMH6TG", 17);         // Eeprom IC Name
+                header[25] = 2;                                           // Copy Count
+                header[31] = m_crc8(&header[0], 31);                      // CRC-8
+
+                /* Write header to eeprom */
+                res = m_eeprom.write(0, header, CONFIG_SETTINGS_EEPROM_HEADER_SIZE);
+                if (res < 0) {
+                    log_e("Failed to write header to eeprom!");
+                    m_load_sm = STATE_EEPROM_UNAVAILABLE;
+                    break;
+                }
+
+                /* Log */
+                log_i("Eeprom header rebuilt successfully.");
+
+                /* Compute sizes of copies A and B
+                 * Note, we align copies to page boundaries */
+                size_t eeprom_pages_total = m_eeprom.size_total_get() / m_eeprom.size_page_get();
+                size_t eeprom_pages_user_by_header = (CONFIG_SETTINGS_EEPROM_HEADER_SIZE + (m_eeprom.size_page_get() - 1)) / m_eeprom.size_page_get();
+                size_t eeprom_pages_left_for_copies = eeprom_pages_total - eeprom_pages_user_by_header;
+                size_t eeprom_pages_per_copy = eeprom_pages_left_for_copies / 2;
+                m_eeprom_copy[0].start = eeprom_pages_user_by_header * m_eeprom.size_page_get();
+                m_eeprom_copy[0].size = eeprom_pages_per_copy * m_eeprom.size_page_get();
+                m_eeprom_copy[1].start = m_eeprom_copy[0].start + m_eeprom_copy[0].size;
+                m_eeprom_copy[1].size = eeprom_pages_per_copy * m_eeprom.size_page_get();
+
+                /* Move on */
+                m_load_sm = STATE_EEPROM_LOAD_COPYA;
+                break;
+            }
+
+            case STATE_EEPROM_LOAD_COPYA: {
+
+                /* Log */
+                log_i("Loading settings from eeprom copy A...");
+
+                /* Deserialize settings from copy A */
+                m_eeprom_reader.index = m_eeprom_copy[0].start;
+                m_eeprom_reader.crc = 0;
+                DeserializationError unpack_res = deserializeMsgPack(m_doc, m_eeprom_reader);
+                if (unpack_res != DeserializationError::Ok) {
+                    log_e("Failed to deserialize settings from eeprom copy A (%s)!", unpack_res.c_str());
+                    m_doc.clear();
+                    m_load_sm = STATE_EEPROM_LOAD_COPYB;
+                    break;
+                }
+
+                /* Validate CRC */
+                uint8_t crc32_stored_bytes[4] = {0};
+                res = m_eeprom.read(m_eeprom_reader.index, crc32_stored_bytes, 4);
+                if (res < 0) {
+                    log_e("Failed to read crc32 from eeprom copy A!");
+                    m_doc.clear();
+                    m_load_sm = STATE_EEPROM_UNAVAILABLE;
+                    break;
+                }
+                uint32_t crc32_stored = (crc32_stored_bytes[0] << 24) | (crc32_stored_bytes[1] << 16) | (crc32_stored_bytes[2] << 8) | crc32_stored_bytes[3];
+                if (crc32_stored != m_eeprom_reader.crc) {
+                    log_e("Invalid crc32 in eeprom copy A (expected 0x%08X, got 0x%08X)!", m_eeprom_reader.crc, crc32_stored);
+                    m_doc.clear();
+                    m_load_sm = STATE_EEPROM_LOAD_COPYB;
+                    break;
+                }
+
+                /* Log */
+                log_i("Successfully loaded settings from eeprom copy A.");
+
+                /* Move on */
+                m_load_sm = STATE_TRANSLATE;
+                break;
+            }
+
+            case STATE_EEPROM_LOAD_COPYB: {
+
+                /* Log */
+                log_i("Loading settings from eeprom copy B...");
+
+                /* Deserialize settings from copy B */
+                m_eeprom_reader.index = m_eeprom_copy[1].start;
+                m_eeprom_reader.crc = 0;
+                DeserializationError unpack_res = deserializeMsgPack(m_doc, m_eeprom_reader);
+                if (unpack_res != DeserializationError::Ok) {
+                    log_e("Failed to deserialize settings from eeprom copy B (%s)!", unpack_res.c_str());
+                    m_doc.clear();
+                    m_load_sm = STATE_FLASH_LOAD;
+                    break;
+                }
+
+                /* Validate CRC */
+                uint8_t crc32_stored_bytes[4] = {0};
+                res = m_eeprom.read(m_eeprom_reader.index, crc32_stored_bytes, 4);
+                if (res < 0) {
+                    log_e("Failed to read crc32 from eeprom copy B!");
+                    m_doc.clear();
+                    m_load_sm = STATE_EEPROM_UNAVAILABLE;
+                    break;
+                }
+                uint32_t crc32_stored = (crc32_stored_bytes[0] << 24) | (crc32_stored_bytes[1] << 16) | (crc32_stored_bytes[2] << 8) | crc32_stored_bytes[3];
+                if (crc32_stored != m_eeprom_reader.crc) {
+                    log_e("Invalid crc32 in eeprom copy B (expected 0x%08X, got 0x%08X)!", m_eeprom_reader.crc, crc32_stored);
+                    m_doc.clear();
+                    m_load_sm = STATE_FLASH_LOAD;
+                    break;
+                }
+
+                /* Log */
+                log_i("Successfully loaded settings from eeprom copy B.");
+
+                /* Move on */
+                m_load_sm = STATE_TRANSLATE;
+                break;
+            }
+
+            case STATE_EEPROM_UNAVAILABLE: {
+
+                /* Flag eeprom as unavailable */
+                m_eeprom_available = false;
+
+                /* Move on */
+                m_load_sm = STATE_FLASH_LOAD;
+                break;
+            }
+
+            case STATE_FLASH_LOAD: {
+
+                /* Log */
+                log_i("Loading settings from flash...");
+
+                /* Return temporary error */
+                return -1;
+
+                /* Move on */
+                m_load_sm = STATE_DONE;
+                break;
+            }
+
+            case STATE_TRANSLATE: {
+
+                /* Dirty fix to ensure m_doc is usable for writing after a failed deserialization */
+                if (m_doc.memoryUsage() == 0) {
+                    static const char fix[] = "{}";
+                    DeserializationError unpack_res = deserializeJson(m_doc, (char *)(&fix[0]));
+                    if (unpack_res != DeserializationError::Ok) {
+                        log_e("Failed to create empty document (%d)!", unpack_res.code());
+                        m_doc.clear();
+                        m_load_sm = STATE_DONE;
+                        break;
+                    }
+                }
+
+                /* Found expected schema version */
+                if (m_doc["meta"]["schema_version"].as<int>() == 2) {
+                    log_i("Found expected schema version.");
+                }
+
+                /* Migrate from old settings to new settings */
+                else if (m_doc["meta"]["schema_version"].as<int>() == 1) {
+                    log_i("Translating schema version 1 to 2.");
+
+                    /* Extract useful information from old settings */
+                    char old_product_number[CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH + CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH + 1] = {0};
+                    char old_product_revision[CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH + 1] = {0};
+                    char old_serial_number[CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH + 1] = {0};
+                    char old_user_name_line1[CONFIG_SETTINGS_USERNAME_LINE1_MAX_LENGTH + 1] = {0};
+                    char old_user_name_line2[CONFIG_SETTINGS_USERNAME_LINE2_MAX_LENGTH + 1] = {0};
+                    uint8_t old_user_icon[32] = {0};
+                    strlcpy(old_product_number, m_doc["product"]["product_number"] | "SLTO00001R8A", sizeof(old_product_number));
+                    strlcpy(old_serial_number, m_doc["product"]["serial_number"] | "0000000", sizeof(old_serial_number));
+                    strlcpy(old_user_name_line1, m_doc["user"]["name"][0] | "", sizeof(old_user_name_line1));
+                    strlcpy(old_user_name_line2, m_doc["user"]["name"][1] | "", sizeof(old_user_name_line2));
+                    if (m_doc["user"]["icon"].size() == 32) {
+                        for (size_t i = 0; i < 32; i++) {
+                            old_user_icon[i] = m_doc["user"]["icon"][i];
+                        }
+                    }
+
+                    /* Split old product number field into product number and revision */
+                    if (strlen(old_product_number) > CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH) {
+                        strlcpy(old_product_revision, &old_product_number[CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH], sizeof(old_product_revision));
+                        old_product_number[CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH] = '\0';
+                    }
+
+                    /* Clear and rebuild settings in ram */
+                    m_doc.clear();
+                    m_doc["meta"]["schema_version"] = 2;
+                    m_doc["product"]["number"] = (char *)old_product_number;
+                    m_doc["product"]["revision"] = (char *)old_product_revision;
+                    m_doc["product"]["serial"] = (char *)old_serial_number;
+                    m_doc["preferences"]["user"]["name"][0] = (char *)old_user_name_line1;
+                    m_doc["preferences"]["user"]["name"][1] = (char *)old_user_name_line2;
+                    for (size_t i = 0; i < 32; i++) {
+                        m_doc["preferences"]["user"]["icon"][i] = old_user_icon[i];
+                    }
+
+                    /* Mark settings as modified so that they will be saved */
+                    m_modified = true;
+                    m_modified_immediate = true;
+                }
+
+                /* Unknown settings schema version */
+                else {
+                    log_w("Unexpected schema version (%d), use at your own risk!", m_doc["meta"]["schema_version"].as<int>());
+                }
+
+                /* Move on */
+                m_load_sm = STATE_DONE;
+                break;
+            }
+
+            case STATE_DONE: {
+                return 0;
             }
 
             default: {
-                log_e("Unknown state machine state!");
+                log_e("Hurray, we found a cosmic ray!");
                 return -1;
             }
         }
     }
-
-    /* Settings are loaded and ready */
-    return 1;
 }
 
 /**
- * @brief
- * @param
- * @return
+ * @brief Save settings to EEPROM using dual-copy redundancy
+ *
+ * This function saves the current settings to EEPROM using a dual-copy approach
+ * for data integrity and redundancy. It serializes the internal JSON document
+ * to MessagePack format and writes it to both copy A and copy B locations in
+ * EEPROM. The function includes CRC validation and size checking to ensure
+ * data integrity.
+ *
+ * The save process includes:
+ * - Size validation to ensure data fits in EEPROM copies
+ * - Serialization of JSON document to MessagePack format
+ * - CRC-32 calculation for data integrity
+ * - Writing to both copy A and copy B locations
+ *
+ * @return 0 on successful save, negative error code on failure
+ *
+ * @note This function is called internally by settings_task() when settings are modified
  */
-int settings_setup(void) {
+static int m_save(void) {
 
-    /* Setup eeprom */
-    if (m_eeprom.setup(Wire, 0x50) < 0) {
-        log_e("Failed to setup eeprom!");
-        return -1;
+    /* If schema version is not specified, we force it to 1 */
+    if (m_doc["meta"]["schema_version"].is<int>() != true) {
+        m_doc["meta"]["schema_version"] = 2;
     }
 
-    /* Initialize working variables */
-    m_sm = STATE_0_LOAD;
-    m_modified = false;
-    m_modified_timestamp = 0;
+    /* Save to eeprom if available */
+    if (m_eeprom_available == true) {
+
+        /* Log */
+        log_i("Saving settings to eeprom...");
+
+        /* Ensure settings are not too large for eeprom copies */
+        size_t repack_res = measureMsgPack(m_doc);
+        if ((repack_res > m_eeprom_copy[0].size - 4) || (repack_res > m_eeprom_copy[1].size - 4)) {
+            log_e("Settings too large for eeprom copies!");
+            return -E2BIG;
+        }
+
+        /* First, save to copy B */
+        m_eeprom_writer.index = m_eeprom_copy[1].start;
+        m_eeprom_writer.crc = 0;
+        repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+        if (repack_res <= 0) {
+            log_e("Failed to save settings to copy B!");
+            return -EIO;
+        }
+        m_eeprom.seek_write(m_eeprom_writer.index);
+        m_eeprom.write(m_eeprom_writer.crc >> 24);
+        m_eeprom.write(m_eeprom_writer.crc >> 16);
+        m_eeprom.write(m_eeprom_writer.crc >> 8);
+        m_eeprom.write(m_eeprom_writer.crc >> 0);
+
+        /* Log */
+        log_i("Settings saved to eeprom copy B.");
+
+        /* Second, save to copy A */
+        m_eeprom_writer.index = m_eeprom_copy[0].start;
+        m_eeprom_writer.crc = 0;
+        repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+        if (repack_res <= 0) {
+            log_e("Failed to save settings to copy A!");
+            return -EIO;
+        }
+        m_eeprom.seek_write(m_eeprom_writer.index);
+        m_eeprom.write(m_eeprom_writer.crc >> 24);
+        m_eeprom.write(m_eeprom_writer.crc >> 16);
+        m_eeprom.write(m_eeprom_writer.crc >> 8);
+        m_eeprom.write(m_eeprom_writer.crc >> 0);
+
+        /* Log */
+        log_i("Settings saved to eeprom copy A.");
+    }
 
     /* Return success */
     return 0;
 }
 
 /**
- * @brief Read data from the EEPROM memory
+ * @brief Initialize the settings module and load existing settings
  *
- * This function provides a low-level interface to read raw data from the EEPROM.
+ * This function performs the initial setup of the settings module by:
+ * - Initializing the EEPROM interface
+ * - Setting up internal state variables
+ * - Attempting to load existing settings from EEPROM (non-critical if it fails)
  *
- * @param address The starting address in EEPROM to read from
+ * @return 0 on successful initialization, negative error code on failure
+ */
+int settings_setup(void) {
+    int res;
+
+    /* Setup eeprom */
+    res = m_eeprom.setup(Wire, 0x50);
+    if (res < 0) {
+        log_e("Failed to setup eeprom!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+
+    /* Initialize working variables */
+    m_loaded = false;
+    m_modified = false;
+    m_modified_immediate = false;
+    m_modified_timestamp = 0;
+
+    /* Load settings if possible, but don't fail if it fails */
+    res = m_load();
+    if (res < 0) {
+        log_w("Failed to load settings!");
+    }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Read data from the eeprom memory
+ *
+ * This function provides a low-level interface to read raw data from the eeprom.
+ *
+ * @param address The starting address in eeprom to read from
  * @param data    Pointer to buffer where read data will be stored
- * @param length  Number of bytes to read from EEPROM
+ * @param length  Number of bytes to read from eeprom
  * @return number of bytes successfully read, or negative error code on failure
  */
 int settings_eeprom_read(const size_t address, uint8_t *const data, const size_t length) {
@@ -160,13 +716,13 @@ int settings_eeprom_read(const size_t address, uint8_t *const data, const size_t
 }
 
 /**
- * @brief Write data to the EEPROM memory
+ * @brief Write data to the eeprom memory
  *
- * This function provides a low-level interface to write raw data to the EEPROM.
+ * This function provides a low-level interface to write raw data to the eeprom.
  *
- * @param address The starting address in EEPROM to write to
+ * @param address The starting address in eeprom to write to
  * @param data    Pointer to buffer containing data to write
- * @param length  Number of bytes to write to EEPROM
+ * @param length  Number of bytes to write to eeprom
  * @return number of bytes successfully written, or negative error code on failure
  */
 int settings_eeprom_write(const size_t address, const uint8_t *const data, const size_t length) {
@@ -174,12 +730,11 @@ int settings_eeprom_write(const size_t address, const uint8_t *const data, const
 }
 
 /**
- * @brief Completely erase all EEPROM contents and reset settings to defaults
+ * @brief Completely erase all eeprom contents and reset settings to defaults
  *
- * This function performs a complete wipe of the EEPROM memory by writing 0xFF
- * to all memory locations. It also resets the internal JSON document to an
- * empty state. This operation is irreversible and will permanently delete
- * all stored settings and configuration data.
+ * This function performs a complete wipe of the eeprom memory by writing 0xFF
+ * to all memory locations. This operation is irreversible and will permanently
+ * delete all stored settings and configuration data.
  *
  * @warning This function takes around 1 second to complete. Call with caution
  * as it won't play nice with code that requires strict timing.
@@ -188,14 +743,6 @@ int settings_eeprom_write(const size_t address, const uint8_t *const data, const
  */
 int settings_eeprom_wipe(void) {
     int res;
-
-    /* Set empty document */
-    static const char empty[] = "{}";
-    DeserializationError unpack_res = deserializeJson(m_doc, (char *)(&empty[0]));
-    if (unpack_res != DeserializationError::Ok) {
-        log_e("Failed to create empty document (%d)!", unpack_res.code());
-        return -1;
-    }
 
     /* Wipe eeprom contents
      * @note This may take around 1 second to complete */
@@ -215,40 +762,36 @@ int settings_eeprom_wipe(void) {
 
 /**
  * @brief
- * @param temperature_c
+ * @param[out] temperature_c
  * @return
  */
 int settings_temperature_target_get(float &temperature_c) {
-    int res;
 
-    /* Ensure settings are loaded */
-    res = m_settings_ensure_loaded();
-    if (res <= 0) {
-        return -EAGAIN;
+    /* Fetch target temperature */
+    if (m_doc["preferences"]["heating"]["temperature_c"].is<float>() != true) {
+        return 0;
     }
-
-    /* Return if found */
-    if (m_doc["temperature"]["value"].is<float>() == true) {
-        temperature_c = m_doc["temperature"]["value"];
-        return 1;
+    float t = m_doc["preferences"]["heating"]["temperature_c"];
+    if (t < CONFIG_APP_TARGET_MIN || t > CONFIG_APP_TARGET_MAX_SAFE) {
+        return 0;
     }
+    temperature_c = t;
 
-    /* Return not found */
-    return 0;
+    /* Return found */
+    return 1;
 }
 
 /**
  * @brief
- * @param temperature_c
+ * @param[in] temperature_c
  * @return
  */
-int settings_temperature_target_set(const float temperature_c) {
+int settings_temperature_target_set(const float target_c) {
 
     /* Update json document */
-    m_doc["temperature"]["unit"] = "C";
-    m_doc["temperature"]["value"] = temperature_c;
+    m_doc["preferences"]["heating"]["temperature_c"] = target_c;
 
-    /* Mark settings as modified and record timestamp */
+    /* Mark settings as modified */
     m_modified = true;
     m_modified_timestamp = millis();
 
@@ -258,41 +801,38 @@ int settings_temperature_target_set(const float temperature_c) {
 
 /**
  * @brief
- * @param icon
- * @param line1
- * @param line2
+ * @param[out] icon
+ * @param[out] line1
+ * @param[out] line2
  * @return
  */
 int settings_user_get(uint8_t *const icon, char *const line1, char *const line2) {
-    int res;
 
-    /* Ensure settings are loaded */
-    res = m_settings_ensure_loaded();
-    if (res <= 0) {
-        return -EAGAIN;
-    }
-
-    /* Handle icon */
-    size_t icon_size = m_doc["user"]["icon"].size();
+    /* Fetch icon */
+    size_t icon_size = m_doc["preferences"]["user"]["icon"].size();
     if (icon_size != 32) {
         return 0;
     }
     for (size_t i = 0; i < icon_size; i++) {
-        icon[i] = m_doc["user"]["icon"][i];
-        // log_t("icon[%u] = 0x%02X", i, icon[i]);
+        icon[i] = m_doc["preferences"]["user"]["icon"][i];
     }
 
-    /* Handle name */
-    const char *line1_settings = m_doc["user"]["name"][0];
-    const char *line2_settings = m_doc["user"]["name"][1];
-    if ((strlen(line1_settings) > 12) ||  //
-        (strlen(line2_settings) > 12)) {
+    /* Fetch user name */
+    const char *l1 = m_doc["preferences"]["user"]["name"][0];
+    const char *l2 = m_doc["preferences"]["user"]["name"][1];
+    if ((strlen(l1) > CONFIG_SETTINGS_USERNAME_LINE1_MAX_LENGTH) ||
+        (strlen(l2) > CONFIG_SETTINGS_USERNAME_LINE2_MAX_LENGTH)) {
         return 0;
     }
-    strncpy(line1, line1_settings, 13);
-    strncpy(line2, line2_settings, 13);
-    line1[12] = 0;
-    line2[12] = 0;
+    if ((strlen(l1) + strlen(l2)) < 1) {
+        return 0;
+    }
+    if (line1 != NULL) {
+        strlcpy(line1, l1, CONFIG_SETTINGS_USERNAME_LINE1_MAX_LENGTH + 1);
+    }
+    if (line2 != NULL) {
+        strlcpy(line2, l2, CONFIG_SETTINGS_USERNAME_LINE2_MAX_LENGTH + 1);
+    }
 
     /* Return found */
     return 1;
@@ -300,8 +840,8 @@ int settings_user_get(uint8_t *const icon, char *const line1, char *const line2)
 
 /**
  * @brief
- * @param icon
- * @param line1
+ * @param[in] icon
+ * @param[in] line1
  * @param line2
  * @return
  */
@@ -309,14 +849,14 @@ int settings_user_set(const uint8_t icon[32], const char *line1, const char *lin
 
     /* Update json document */
     for (size_t i = 0; i < 32; i++) {
-        m_doc["user"]["icon"][i] = icon[i];
+        m_doc["preferences"]["user"]["icon"][i] = icon[i];
     }
-    m_doc["user"]["name"][0] = line1;
-    m_doc["user"]["name"][1] = line2;
+    m_doc["preferences"]["user"]["name"][0] = (char *)line1;
+    m_doc["preferences"]["user"]["name"][1] = (char *)line2;
 
-    /* Mark settings as modified and record timestamp */
+    /* Mark settings as modified */
     m_modified = true;
-    m_modified_timestamp = millis();
+    m_modified_immediate = true;
 
     /* Return success */
     return 0;
@@ -324,30 +864,31 @@ int settings_user_set(const uint8_t icon[32], const char *line1, const char *lin
 
 /**
  * @brief
- * @param product_number
- * @param serial_number
+ * @param[out] number
+ * @param[out] revision
+ * @param[out] serial
  * @return
  */
-int settings_product_get(char *const product_number, char *const serial_number) {
-    int res;
+int settings_product_get(char *const number, char *const revision, char *const serial) {
 
-    /* Ensure settings are loaded */
-    res = m_settings_ensure_loaded();
-    if (res <= 0) {
-        return -EAGAIN;
-    }
-
-    /* Return if found */
-    const char *pn = m_doc["product"]["product_number"];
-    const char *sn = m_doc["product"]["serial_number"];
-    if (((m_doc["product"].containsKey("product_number") != true) || (strlen(pn) > 12)) ||  //
-        ((m_doc["product"].containsKey("serial_number") != true) || (strlen(sn) > 12))) {
+    /* Fetch values */
+    const char *pn = m_doc["product"]["number"];
+    const char *rv = m_doc["product"]["revision"];
+    const char *sn = m_doc["product"]["serial"];
+    if (((m_doc["product"].containsKey("number") != true) || (strlen(pn) > CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH)) ||
+        ((m_doc["product"].containsKey("revision") != true) || (strlen(rv) > CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH)) ||
+        ((m_doc["product"].containsKey("serial") != true) || (strlen(sn) > CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH))) {
         return 0;
     }
-    strncpy(product_number, pn, 13);
-    strncpy(serial_number, sn, 13);
-    product_number[12] = 0;
-    serial_number[12] = 0;
+    if (number != NULL) {
+        strlcpy(number, pn, CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH + 1);
+    }
+    if (revision != NULL) {
+        strlcpy(revision, rv, CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH + 1);
+    }
+    if (serial != NULL) {
+        strlcpy(serial, sn, CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH + 1);
+    }
 
     /* Return found */
     return 1;
@@ -355,25 +896,28 @@ int settings_product_get(char *const product_number, char *const serial_number) 
 
 /**
  * @brief
- * @param product_number
- * @param serial_number
+ * @param[in] number
+ * @param[in] revision
+ * @param[in] serial
  * @return
  */
-int settings_product_set(const char *const product_number, const char *const serial_number) {
+int settings_product_set(const char *const number, const char *const revision, const char *const serial) {
 
     /* Ensure valid product number and serial number */
-    if ((strlen(product_number) > 12) ||  //
-        (strlen(serial_number) > 12)) {
+    if ((strlen(number) > CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH) ||
+        (strlen(revision) > CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH) ||
+        (strlen(serial) > CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH)) {
         return -EINVAL;
     }
 
     /* Update json document */
-    m_doc["product"]["product_number"] = product_number;
-    m_doc["product"]["serial_number"] = serial_number;
+    m_doc["product"]["number"] = (char *)number;
+    m_doc["product"]["revision"] = (char *)revision;
+    m_doc["product"]["serial"] = (char *)serial;
 
-    /* Mark settings as modified and record timestamp */
+    /* Mark settings as modified */
     m_modified = true;
-    m_modified_timestamp = millis();
+    m_modified_immediate = true;
 
     /* Return success */
     return 0;
@@ -385,17 +929,10 @@ int settings_product_set(const char *const product_number, const char *const ser
  * @return
  */
 int settings_interface_units_get(bool &fahrenheit) {
-    int res;
-
-    /* Ensure settings are loaded */
-    res = m_settings_ensure_loaded();
-    if (res <= 0) {
-        return -EAGAIN;
-    }
 
     /* Return if found */
-    if (m_doc["interface"]["units"].is<int>() == true) {
-        fahrenheit = (m_doc["interface"]["units"] == 1);
+    if (m_doc["preferences"]["ui"]["units"].is<int>() == true) {
+        fahrenheit = (m_doc["preferences"]["ui"]["units"] == 1);
         return 1;
     }
 
@@ -411,9 +948,9 @@ int settings_interface_units_get(bool &fahrenheit) {
 int settings_interface_units_set(const bool fahrenheit) {
 
     /* Update json document */
-    m_doc["interface"]["units"] = fahrenheit ? 1 : 0;
+    m_doc["preferences"]["ui"]["units"] = fahrenheit ? 1 : 0;
 
-    /* Mark settings as modified and record timestamp */
+    /* Mark settings as modified */
     m_modified = true;
     m_modified_timestamp = millis();
 
@@ -423,21 +960,14 @@ int settings_interface_units_set(const bool fahrenheit) {
 
 /**
  * @brief
- * @param left_handed
+ * @param[out] left_handed
  * @return
  */
 int settings_interface_rotation_get(bool &left_handed) {
-    int res;
-
-    /* Ensure settings are loaded */
-    res = m_settings_ensure_loaded();
-    if (res <= 0) {
-        return -EAGAIN;
-    }
 
     /* Return if found */
-    if (m_doc["interface"]["rotation"].is<int>() == true) {
-        left_handed = (m_doc["interface"]["rotation"] == 1);
+    if (m_doc["preferences"]["ui"]["handedness"].is<int>() == true) {
+        left_handed = (m_doc["preferences"]["ui"]["handedness"] == 1);
         return 1;
     }
 
@@ -453,9 +983,9 @@ int settings_interface_rotation_get(bool &left_handed) {
 int settings_interface_rotation_set(const bool left_handed) {
 
     /* Update json document */
-    m_doc["interface"]["rotation"] = (left_handed) ? 1 : 0;
+    m_doc["preferences"]["ui"]["handedness"] = (left_handed) ? 1 : 0;
 
-    /* Mark settings as modified and record timestamp */
+    /* Mark settings as modified */
     m_modified = true;
     m_modified_timestamp = millis();
 
@@ -469,17 +999,10 @@ int settings_interface_rotation_set(const bool left_handed) {
  * @return
  */
 int settings_display_brightness_get(int &percent) {
-    int res;
-
-    /* Ensure settings are loaded */
-    res = m_settings_ensure_loaded();
-    if (res <= 0) {
-        return -EAGAIN;
-    }
 
     /* Return if found */
-    if (m_doc["display"]["brightness"].is<int>() == true) {
-        percent = m_doc["display"]["brightness"];
+    if (m_doc["preferences"]["ui"]["brightness"].is<int>() == true) {
+        percent = m_doc["preferences"]["ui"]["brightness"];
         if (percent < 10) {
             percent = 10;
         } else if (percent > 100) {
@@ -500,15 +1023,15 @@ int settings_display_brightness_get(int &percent) {
 int settings_display_brightness_set(const int percent) {
 
     /* Ensure valid brightness */
-    if ((percent < 10) ||  //
+    if ((percent < 10) ||
         (percent > 100)) {
         return -EINVAL;
     }
 
     /* Update json document */
-    m_doc["display"]["brightness"] = percent;
+    m_doc["preferences"]["ui"]["brightness"] = percent;
 
-    /* Mark settings as modified and record timestamp */
+    /* Mark settings as modified */
     m_modified = true;
     m_modified_timestamp = millis();
 
@@ -517,83 +1040,36 @@ int settings_display_brightness_set(const int percent) {
 }
 
 /**
- * @brief Settings management task - handles loading and saving settings
+ * @brief Background task for managing settings persistence
  *
- * This function implements a state machine that:
- * 1. Loads settings from EEPROM on startup
- * 2. Waits in idle state while settings are being used
- * 3. Saves settings to EEPROM after a delay when they are modified
+ * This function should be called periodically from the main loop to handle
+ * deferred saving of settings to EEPROM. It checks if settings have been
+ * modified and either the immediate save flag is set or the configured
+ * delay has elapsed, then triggers a save operation.
  *
- * @return 0 on success, negative error code otherwise
+ * The function implements a deferred write mechanism to avoid excessive
+ * EEPROM wear by batching multiple setting changes into a single write
+ * operation after a configurable delay period.
+ *
+ * @return 0 on successful execution, negative error code on failure
+ * @retval 0 Success - task completed (may have saved settings or done nothing)
+ * @note This function is non-blocking and safe to call frequently
  */
 int settings_task(void) {
     int res;
 
-    switch (m_sm) {
+    /* Handle deferred saving of settings */
+    if ((m_modified == true) &&
+        ((m_modified_immediate == true) || ((millis() - m_modified_timestamp) >= CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS))) {
 
-        case STATE_0_LOAD: {
+        /* Clear modified flag regardles of success or failure */
+        m_modified = false;
+        m_modified_immediate = false;
 
-            /* Ensure eeprom is detected */
-            if (m_eeprom.detect() != true) {
-                log_e("Failed to detect eeprom!");
-                m_sm = STATE_ERROR;
-                break;
-            }
-
-            /* Load settings from EEPROM */
-            res = m_eeprom_unpack();
-            if (res < 0) {
-                log_e("Failed to load settings from EEPROM!");
-                m_sm = STATE_ERROR;
-                break;
-            }
-
-            /* Move to idle state */
-            m_sm = STATE_1_IDLE;
-            log_d("Settings loaded successfully");
-            break;
-        }
-
-        case STATE_1_IDLE: {
-
-            /* Wait for settings to be marked as modified */
-            if (m_modified == false) {
-                break;
-            }
-
-            /* Check if enough time has passed since last modification */
-            if ((millis() - m_modified_timestamp) < CONFIG_SETTINGS_EEPROM_DEFFERED_WRITE_DELAY_MS) {
-                break;
-            }
-
-            /* Move to save state */
-            m_sm = STATE_2_SAVE;
-            break;
-        }
-
-        case STATE_2_SAVE: {
-
-            /* Commit settings to EEPROM */
-            res = m_eeprom_repack();
-            if (res < 0) {
-                log_e("Failed to commit settings to EEPROM!");
-                m_sm = STATE_ERROR;
-                break;
-            }
-
-            /* Clear modified flag */
-            m_modified = false;
-
-            /* Return to idle state */
-            m_sm = STATE_1_IDLE;
-            log_d("Settings saved to EEPROM");
-            break;
-        }
-
-        default: {
-            log_e("Hurray, we found a cosmic ray!");
-            m_sm = STATE_0_LOAD;
-            return -1;
+        /* Attempt to save settings */
+        res = m_save();
+        if (res < 0) {
+            log_w("Failed to save settings!");
         }
     }
 

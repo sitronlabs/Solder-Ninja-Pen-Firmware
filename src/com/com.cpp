@@ -99,10 +99,6 @@ int com_command_process(const char *const str, const size_t len) {
 
         /* Validate address */
         const size_t address = doc["address"] | 0;
-        if (address < 0) {
-            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"Invalid address!\"]}"));
-            return 0;
-        }
 
         /* Validate length */
         const size_t length = doc["length"] | 0;
@@ -154,10 +150,6 @@ int com_command_process(const char *const str, const size_t len) {
 
         /* Validate address */
         const size_t address = doc["address"] | 0;
-        if (address < 0) {
-            Serial.println(F("{\"result\":\"failure\", \"errors\" : [\"Invalid address!\"]}"));
-            return 0;
-        }
 
         /* Validate data array */
         JsonArray data = doc["data"].as<JsonArray>();
@@ -211,14 +203,16 @@ int com_command_process(const char *const str, const size_t len) {
     else if (doc[F("action")] == F("product_information_get")) {
 
         /* Retrieve product information if available */
-        char product_number[12 + 1];
-        char serial_number[12 + 1];
-        res = settings_product_get(product_number, serial_number);  // TODO Change to prevent overflow
+        char number[CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH + 1] = {0};
+        char revision[CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH + 1] = {0};
+        char serial[CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH + 1] = {0};
+        res = settings_product_get(number, revision, serial);
         if (res == 1) {
             StaticJsonDocument<128> response;
             response["result"] = "success";
-            response["product_number"] = product_number;
-            response["serial_number"] = serial_number;
+            response["number"] = number;
+            response["revision"] = revision;
+            response["serial"] = serial;
             serializeJson(response, Serial);
             Serial.println();
         } else {
@@ -230,19 +224,24 @@ int com_command_process(const char *const str, const size_t len) {
     else if (doc[F("action")] == F("product_information_set")) {
 
         /* Retrieve and verify arugments */
-        const char *product_number = doc["product_number"];
-        const char *serial_number = doc["serial_number"];
-        if (strlen(product_number) <= 0 || strlen(product_number) > 12) {
+        const char *number = doc["number"];
+        const char *revision = doc["revision"];
+        const char *serial = doc["serial"];
+        if (strlen(number) <= 0 || strlen(number) > CONFIG_SETTINGS_PRODUCT_NUMBER_MAX_LENGTH) {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid product number!\"]}"));
             return 0;
         }
-        if (strlen(serial_number) <= 0 || strlen(serial_number) > 12) {
+        if (strlen(revision) <= 0 || strlen(revision) > CONFIG_SETTINGS_PRODUCT_REVISION_MAX_LENGTH) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid product revision!\"]}"));
+            return 0;
+        }
+        if (strlen(serial) <= 0 || strlen(serial) > CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH) {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid serial number!\"]}"));
             return 0;
         }
 
         /* Save */
-        res = settings_product_set(product_number, serial_number);
+        res = settings_product_set(number, revision, serial);
         if (res < 0) {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to save settings!\"]}"));
             return 0;
@@ -257,9 +256,9 @@ int com_command_process(const char *const str, const size_t len) {
 
         /* Retrieve user information if available */
         uint8_t icon[32];
-        char text_line1[12 + 1];
-        char text_line2[12 + 1];
-        res = settings_user_get(icon, text_line1, text_line2);  // TODO Change to prevent overflow
+        char text_line1[CONFIG_SETTINGS_USERNAME_LINE1_MAX_LENGTH + 1];
+        char text_line2[CONFIG_SETTINGS_USERNAME_LINE2_MAX_LENGTH + 1];
+        res = settings_user_get(icon, text_line1, text_line2);
         if (res == 1) {
             StaticJsonDocument<1024> response;
             response["result"] = "success";
@@ -287,7 +286,6 @@ int com_command_process(const char *const str, const size_t len) {
         uint8_t icon[32];
         for (size_t i = 0; i < icon_size; i++) {
             icon[i] = doc["icon"][i];
-            // log_t("icon[%u] = 0x%02X", i, icon[i]);
         }
 
         /* Handle name */
@@ -297,8 +295,8 @@ int com_command_process(const char *const str, const size_t len) {
             (strlen(line2) <= 0)) {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Name too short!\"]}"));
             return 0;
-        } else if ((strlen(line1) > 12) ||  //
-                   (strlen(line2) > 12)) {
+        } else if ((strlen(line1) > CONFIG_SETTINGS_USERNAME_LINE1_MAX_LENGTH) ||  //
+                   (strlen(line2) > CONFIG_SETTINGS_USERNAME_LINE2_MAX_LENGTH)) {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Name too long!\"]}"));
             return 0;
         }
