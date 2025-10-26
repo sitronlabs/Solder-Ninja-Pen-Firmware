@@ -7,6 +7,7 @@
 /* Arduino headers */
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <FatFS.h>
 #include <StreamUtils.h>
 #include <m24c64.h>
 
@@ -22,6 +23,11 @@ static bool m_modified;                //!< Flag indicating that settings have b
 static bool m_modified_immediate;      //!< Flag indicating that settings should be saved immediately
 static uint32_t m_modified_timestamp;  //!< Timestamp of last modification used for deferred saving
 static bool m_eeprom_available;        //!< Flag indicating that eeprom is available
+static bool m_flash_available;         //!< Flag indicating that flash is available
+static enum {
+    FLASH_ACCESSOR_NONE,
+    FLASH_ACCESSOR_LOCAL,
+} m_flash_accessor;  //!< Enum used to track of who has exclusive access to flash
 static struct {
     size_t start;    //!< Start address of the eeprom copy
     size_t size;     //!< Size of the eeprom copy
@@ -183,6 +189,26 @@ static struct {
 } m_eeprom_writer;
 
 /**
+ * @brief Struct that acts as a custom writer for json to compute its CRC-32 hash.
+ *
+ * This struct provides write methods compatible with ArduinoJson's custom Writer interface,
+ * enabling automatic calculation of a running CRC-32 value over all data written to eeprom.
+ *
+ * @see https://arduinojson.org/v5/doc/tricks/#compute-hash-of-json-output
+ */
+static struct {
+    uint32_t crc = 0;
+    size_t write(uint8_t c) {
+        crc = m_crc32(crc, &c, 1);
+        return 1;
+    }
+    size_t write(const uint8_t *buffer, size_t length) {
+        crc = m_crc32(crc, buffer, length);
+        return length;
+    }
+} m_json_hasher;
+
+/**
  * @brief Load settings from EEPROM using a state machine approach
  *
  * This function implements a robust state machine to load settings from EEPROM
@@ -219,10 +245,9 @@ static int m_load(void) {
 
             case STATE_EEPROM_HEADER_VALIDATE: {
 
-                /* Detect eeprom */
-                m_eeprom_available = true;
-                if (m_eeprom.detect() != true) {
-                    log_e("Failed to detect eeprom!");
+                /* Skip if eeprom is not available */
+                if (m_eeprom_available != true) {
+                    log_w("Eeprom not available for loading!");
                     m_load_sm = STATE_EEPROM_UNAVAILABLE;
                     break;
                 }
@@ -494,11 +519,63 @@ static int m_load(void) {
                 /* Log */
                 log_i("Loading settings from flash...");
 
-                /* Return temporary error */
-                return -1;
+                /* Skip if flash is not available */
+                if (m_flash_available != true) {
+                    log_e("Flash is not available!");
+                    m_load_sm = STATE_DONE;
+                    return -1;  // TODO: Improve error handling?
+                }
+
+                /* Gain access to flash */
+                if (m_flash_accessor != FLASH_ACCESSOR_NONE) {
+                    log_e("Flash is already in use!");
+                    m_load_sm = STATE_DONE;
+                    return -1;  // TODO: Improve error handling?
+                }
+                m_flash_accessor = FLASH_ACCESSOR_LOCAL;
+
+                /* Ensure file exists in flash */
+                if (!FatFS.exists("settings.json")) {
+                    log_e("Flash doesn't contain settings.json!");
+                    m_flash_accessor = FLASH_ACCESSOR_NONE;
+                    m_load_sm = STATE_DONE;
+                    return -1;  // TODO: Improve error handling?
+                }
+
+                /* Open file in flash */
+                File fp = FatFS.open("settings.json", "r");
+                if (!fp) {
+                    log_e("Failed to open settings.json for reading!");
+                    m_flash_accessor = FLASH_ACCESSOR_NONE;
+                    m_load_sm = STATE_DONE;
+                    return -1;  // TODO: Improve error handling?
+                }
+
+                /* Deserialize settings from flash */
+                DeserializationError unpack_res = deserializeJson(m_doc, fp);
+                if (unpack_res != DeserializationError::Ok) {
+                    log_e("Failed to deserialize settings from flash (%s)!", unpack_res.c_str());
+                    fp.close();
+                    m_flash_accessor = FLASH_ACCESSOR_NONE;
+                    m_load_sm = STATE_DONE;
+                    return -1;  // TODO: Improve error handling?
+                }
+
+                /* Close file in flash */
+                fp.close();
+
+                /* Release access to flash */
+                m_flash_accessor = FLASH_ACCESSOR_NONE;
+
+                /* Mark settings as modified so that they will be saved */
+                m_modified = true;
+                m_modified_immediate = true;
+
+                /* Log */
+                log_i("Successfully loaded settings from flash.");
 
                 /* Move on */
-                m_load_sm = STATE_DONE;
+                m_load_sm = STATE_TRANSLATE;
                 break;
             }
 
@@ -613,56 +690,224 @@ static int m_save(void) {
         m_doc["meta"]["schema_version"] = 2;
     }
 
-    /* Save to eeprom if available */
-    if (m_eeprom_available == true) {
+    /* State machine */
+    bool eeprom_save_success = false;
+    bool flash_save_success = false;
+    bool flash_file_exists = false;
+    uint32_t flash_file_crc = 0;
+    enum {
+        STATE_EEPROM_0,
+        STATE_EEPROM_1,
+        STATE_EEPROM_2,
+        STATE_FLASH_0,
+        STATE_FLASH_1,
+        STATE_FLASH_2,
+        STATE_DONE,
+    } m_save_sm = STATE_EEPROM_0;
+    while (true) {
+        switch (m_save_sm) {
 
-        /* Log */
-        log_i("Saving settings to eeprom...");
+            case STATE_EEPROM_0: {
 
-        /* Ensure settings are not too large for eeprom copies */
-        size_t repack_res = measureMsgPack(m_doc);
-        if ((repack_res > m_eeprom_copy[0].size - 4) || (repack_res > m_eeprom_copy[1].size - 4)) {
-            log_e("Settings too large for eeprom copies!");
-            return -E2BIG;
+                /* Skip eeprom if not available */
+                if (m_eeprom_available != true) {
+                    log_w("Eeprom not available for saving!");
+                    m_save_sm = STATE_FLASH_0;
+                    break;
+                }
+
+                /* Log */
+                log_i("Saving settings to eeprom...");
+
+                /* Ensure settings are not too large for eeprom copies */
+                size_t repack_res = measureMsgPack(m_doc);
+                if ((repack_res > m_eeprom_copy[0].size - 4) || (repack_res > m_eeprom_copy[1].size - 4)) {
+                    log_e("Settings too large for eeprom copies!");
+                    m_save_sm = STATE_FLASH_0;
+                    break;
+                }
+
+                /* Move on */
+                m_save_sm = STATE_EEPROM_1;
+                break;
+            }
+
+            case STATE_EEPROM_1: {
+
+                /* First, save to copy B */
+                m_eeprom_writer.index = m_eeprom_copy[1].start;
+                m_eeprom_writer.crc = 0;
+                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+                if (repack_res <= 0) {
+                    log_e("Failed to save settings to copy B!");
+                    m_save_sm = STATE_EEPROM_2;
+                    break;
+                }
+                m_eeprom.seek_write(m_eeprom_writer.index);
+                m_eeprom.write(m_eeprom_writer.crc >> 24);
+                m_eeprom.write(m_eeprom_writer.crc >> 16);
+                m_eeprom.write(m_eeprom_writer.crc >> 8);
+                m_eeprom.write(m_eeprom_writer.crc >> 0);
+                eeprom_save_success = true;
+
+                /* Log */
+                log_i("Settings saved to eeprom copy B.");
+
+                /* Move on */
+                m_save_sm = STATE_EEPROM_2;
+                break;
+            }
+
+            case STATE_EEPROM_2: {
+
+                /* Second, save to copy A */
+                m_eeprom_writer.index = m_eeprom_copy[0].start;
+                m_eeprom_writer.crc = 0;
+                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+                if (repack_res <= 0) {
+                    log_e("Failed to save settings to copy A!");
+                    return -EIO;
+                }
+                m_eeprom.seek_write(m_eeprom_writer.index);
+                m_eeprom.write(m_eeprom_writer.crc >> 24);
+                m_eeprom.write(m_eeprom_writer.crc >> 16);
+                m_eeprom.write(m_eeprom_writer.crc >> 8);
+                m_eeprom.write(m_eeprom_writer.crc >> 0);
+                eeprom_save_success = true;
+
+                /* Log */
+                log_i("Settings saved to eeprom copy A.");
+
+                /* Move on */
+                m_save_sm = STATE_FLASH_0;
+                break;
+            }
+
+            case STATE_FLASH_0: {
+
+                /* Skip flash if not available */
+                if (m_flash_available != true) {
+                    log_w("Flash not available for saving!");
+                    m_save_sm = STATE_DONE;
+                    break;
+                }
+
+                /* Log */
+                log_i("Saving settings to flash...");
+
+                /* Gain access to flash */
+                if (m_flash_accessor != FLASH_ACCESSOR_NONE) {
+                    log_w("Flash is already in use!");
+                    m_save_sm = STATE_DONE;
+                    break;
+                }
+                m_flash_accessor = FLASH_ACCESSOR_LOCAL;
+
+                /* Ensure file exists in flash */
+                if (!FatFS.exists("settings.json")) {
+                    flash_file_exists = false;
+                    m_save_sm = STATE_FLASH_1;
+                    break;
+                } else {
+                    flash_file_exists = true;
+                }
+
+                /* Compute hash of file in flash */
+                File fp = FatFS.open("settings.json", "r");
+                if (!fp) {
+                    log_e("Failed to open settings.json for reading!");
+                    m_save_sm = STATE_FLASH_2;
+                    break;
+                }
+                while (fp.available()) {
+                    uint8_t c = fp.read();
+                    flash_file_crc = m_crc32(flash_file_crc, &c, 1);
+                }
+                fp.close();
+
+                /* Move on */
+                m_save_sm = STATE_FLASH_1;
+                break;
+            }
+
+            case STATE_FLASH_1: {
+
+                /* Create a filtered document without diagnostics for flash storage */
+                DynamicJsonDocument doc_filtered(CONFIG_SETTINGS_JSON_DOCUMENT_SIZE);
+                doc_filtered["meta"] = m_doc["meta"];
+                doc_filtered["product"] = m_doc["product"];
+                doc_filtered["preferences"] = m_doc["preferences"];
+                doc_filtered["factory"] = m_doc["factory"];
+
+                /* Because we are trying to be mindful of the flash wear,
+                 * if the file exsits we only want to write it if the content is different,
+                 * and for that we compare the two crc-32 values */
+                if (flash_file_exists == true) {
+
+                    /* Compute hash of the filtered document */
+                    m_json_hasher.crc = 0;
+                    size_t json_res = serializeJsonPretty(doc_filtered, m_json_hasher);
+                    if (json_res <= 0) {
+                        log_e("Failed to compute hash of settings!");
+                        m_save_sm = STATE_FLASH_2;
+                        break;
+                    }
+
+                    /* Skip writing if the content is the same */
+                    if (flash_file_crc == m_json_hasher.crc) {
+                        log_i("Settings are the same, skipping write!");
+                        flash_save_success = true;
+                        m_save_sm = STATE_FLASH_2;
+                        break;
+                    }
+                }
+
+                /* Open file for writing */
+                File write_file = FatFS.open("settings.json", "w");
+                if (!write_file) {
+                    log_e("Failed to open settings.json for writing!");
+                    m_save_sm = STATE_FLASH_2;
+                    break;
+                }
+
+                /* Write document to file */
+                size_t bytes_written = serializeJsonPretty(doc_filtered, write_file);
+                write_file.close();
+                flash_save_success = true;
+
+                /* Log */
+                log_i("Settings saved to flash.");
+
+                /* Move on */
+                m_save_sm = STATE_FLASH_2;
+                break;
+            }
+
+            case STATE_FLASH_2: {
+
+                /* Release access to flash */
+                m_flash_accessor = FLASH_ACCESSOR_NONE;
+
+                /* Move on */
+                m_save_sm = STATE_DONE;
+                break;
+            }
+
+            case STATE_DONE: {
+                if ((eeprom_save_success == true) ||
+                    (flash_save_success == true)) {
+                    return 0;
+                } else {
+                    return -1;
+                }
+            }
+
+            default: {
+                log_e("Hurray, we found a cosmic ray!");
+                return -1;
+            }
         }
-
-        /* First, save to copy B */
-        m_eeprom_writer.index = m_eeprom_copy[1].start;
-        m_eeprom_writer.crc = 0;
-        repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
-        if (repack_res <= 0) {
-            log_e("Failed to save settings to copy B!");
-            return -EIO;
-        }
-        m_eeprom.seek_write(m_eeprom_writer.index);
-        m_eeprom.write(m_eeprom_writer.crc >> 24);
-        m_eeprom.write(m_eeprom_writer.crc >> 16);
-        m_eeprom.write(m_eeprom_writer.crc >> 8);
-        m_eeprom.write(m_eeprom_writer.crc >> 0);
-
-        /* Log */
-        log_i("Settings saved to eeprom copy B.");
-
-        /* Second, save to copy A */
-        m_eeprom_writer.index = m_eeprom_copy[0].start;
-        m_eeprom_writer.crc = 0;
-        repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
-        if (repack_res <= 0) {
-            log_e("Failed to save settings to copy A!");
-            return -EIO;
-        }
-        m_eeprom.seek_write(m_eeprom_writer.index);
-        m_eeprom.write(m_eeprom_writer.crc >> 24);
-        m_eeprom.write(m_eeprom_writer.crc >> 16);
-        m_eeprom.write(m_eeprom_writer.crc >> 8);
-        m_eeprom.write(m_eeprom_writer.crc >> 0);
-
-        /* Log */
-        log_i("Settings saved to eeprom copy A.");
     }
-
-    /* Return success */
-    return 0;
 }
 
 /**
@@ -690,6 +935,25 @@ int settings_setup(void) {
     m_modified = false;
     m_modified_immediate = false;
     m_modified_timestamp = 0;
+
+    /* Detect eeprom */
+    if (m_eeprom.detect() != true) {
+        log_e("Failed to detect eeprom!");
+        m_eeprom_available = false;
+    } else {
+        m_eeprom_available = true;
+    }
+
+    /* Setup fatfs */
+    bool fatfs_res = FatFS.begin();
+    if (fatfs_res != true) {
+        log_w("Failed to init fatfs!");
+        m_flash_available = false;
+        m_flash_accessor = FLASH_ACCESSOR_NONE;
+    } else {
+        m_flash_available = true;
+        m_flash_accessor = FLASH_ACCESSOR_NONE;
+    }
 
     /* Load settings if possible, but don't fail if it fails */
     res = m_load();
