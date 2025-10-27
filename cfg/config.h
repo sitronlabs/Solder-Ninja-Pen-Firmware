@@ -18,10 +18,6 @@
 #define CONFIG_BUTTONS_INDIVIDUAL_PRESS_LONG_REPEAT_DURATION 250  //!<
 #define CONFIG_BUTTONS_COMBINED_PRESS_LONG_REPEAT_DURATION 500    //!<
 
-/* Dislay config */
-#define CONFIG_DISPLAY_WIDTH 96   //!< Horizontal size of the display (in pixels).
-#define CONFIG_DISPLAY_HEIGHT 16  //!< Vertical size of the display (in pixels).
-
 /* Orders config */
 #define CONFIG_COMMAND_LENGTH_LIMIT 256  //!<
 

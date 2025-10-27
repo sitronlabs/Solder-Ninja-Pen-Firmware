@@ -1,41 +1,45 @@
 #ifndef INTERFACE_H
 #define INTERFACE_H
 
+/* Config */
+#include "../../cfg/config.h"
+#ifndef CONFIG_UI_DISPLAY_WIDTH
+#define CONFIG_UI_DISPLAY_WIDTH 96  //!< Horizontal size of the display (in pixels).
+#endif
+#ifndef CONFIG_UI_DISPLAY_HEIGHT
+#define CONFIG_UI_DISPLAY_HEIGHT 16  //!< Vertical size of the display (in pixels).
+#endif
+#ifndef CONFIG_UI_SPLASH_DURATION
+#define CONFIG_UI_SPLASH_DURATION 1500  //!< Duration of the splash screen (in milliseconds).
+#endif
+#ifndef CONFIG_UI_INFO_DURATION
+#define CONFIG_UI_INFO_DURATION 1500  //!< Duration of each information screen (in milliseconds).
+#endif
+#ifndef CONFIG_UI_ADJUST_DURATION
+#define CONFIG_UI_ADJUST_DURATION 1000  //!< Amount of time the target temperature is displayed before reverting to the measured temperature (in milliseconds).
+#endif
+
 /**
+ * @brief Initialize the user interface system
  *
- */
-enum page {
-    PAGE_NONE,
-    PAGE_SPLASH,
-    PAGE_LOCKED,
-    PAGE_MONITOR,
-    PAGE_MENU_LIST,
-    PAGE_MENU_ITEM,
-};
-
-// It is the interface that is locked
-// Or is it the app ?
-// Interface unlocks, can the station unlock ?
-// Magnet absent->present : locks
-// Magnet present->absent : unlocks
-// Both buttons press : locks/unlocks
-// Com can unlock
-
-/**
- * Nope, interface should be autonomous
- * It lives its own life
- */
-// int interface_show(const enum page page);
-
-/**
+ * This function sets up all interface components including buttons, magnet sensor,
+ * accelerometer, and the OLED display. It configures display settings such as
+ * rotation and brightness based on stored preferences.
  *
+ * @return 0 on success, negative error code on failure
  */
 int interface_setup(void);
 
 /**
+ * @brief Main interface task handler
  *
- * Interface should poll data as the communication link would.
+ * This function implements the main user interface state machine that handles
+ * all display updates, user input processing, and state transitions. It should
+ * be called regularly to poll for user interactions and update the display
+ * accordingly.
+ *
+ * @return 0 on success, negative error code on failure
  */
-int interface_task(void);  // Calls buttons, and display tasks
+int interface_task(void);
 
 #endif

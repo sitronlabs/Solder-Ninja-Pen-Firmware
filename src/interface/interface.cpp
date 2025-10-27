@@ -1,7 +1,7 @@
 /* Self header */
 #include "interface.h"
 
-/* Project */
+/* Project headers */
 #include "../gen/version.h"
 #include "app/app.h"
 #include "element/element.h"
@@ -12,22 +12,22 @@
 #include "power/power.h"
 #include "settings/settings.h"
 
-/* Arduino libraries */
+/* Arduino headers */
 #include <Arduino.h>
 #include <Wire.h>
 #include <ssd1306.h>
 
 #if R8A
-/* Pico libraries */
+/* Pico headers */
 #include <pico/bootrom.h>
 #endif
 
-/* C/C++ libraries */
+/* C/C++ headers */
 #include <stdint.h>
 
 /* Local variables */
-static ssd1306 m_library(96, 16);
-static uint8_t m_buffer[96 * 16 / 8];
+static ssd1306 m_library(CONFIG_UI_DISPLAY_WIDTH, CONFIG_UI_DISPLAY_HEIGHT);
+static uint8_t m_buffer[CONFIG_UI_DISPLAY_WIDTH * CONFIG_UI_DISPLAY_HEIGHT / 8];
 static uint32_t m_timestamp;
 static enum {
     STATE_SPLASH_0,
@@ -68,9 +68,13 @@ const uint8_t m_icon_firmware_version[32] = {0x00, 0x00, 0x1c, 0x38, 0x22, 0x44,
 const uint8_t m_icon_firmware_update[32] = {0x00, 0x00, 0x02, 0x40, 0x3f, 0xf8, 0x40, 0x04, 0x41, 0x04, 0x41, 0x04, 0xc1, 0x06, 0x41, 0x04, 0x41, 0x04, 0xc5, 0x46, 0x43, 0x84, 0x41, 0x04, 0x40, 0x04, 0x3f, 0xf8, 0x02, 0x40, 0x00, 0x00};
 
 /**
- * @return 0 in case of success, or a negative error code otherwise, in particular:
- * -ERROR_GENERIC
- * -ERROR_PERIPHERAL_NOT_DETECTED
+ * @brief Initialize the user interface system
+ *
+ * This function sets up all interface components including buttons, magnet sensor,
+ * accelerometer, and the OLED display. It configures display settings such as
+ * rotation and brightness based on stored preferences.
+ *
+ * @return 0 on success, negative error code on failure
  */
 int interface_setup(void) {
     int res;
@@ -131,7 +135,20 @@ int interface_setup(void) {
 }
 
 /**
+ * @brief Main interface task handler
  *
+ * This function implements the main user interface state machine that handles
+ * all display updates, user input processing, and state transitions. It should
+ * be called regularly to poll for user interactions and update the display
+ * accordingly.
+ *
+ * The state machine manages various UI states including:
+ * - Splash screen display
+ * - Information screens (version, product info, user info)
+ * - Monitor states (locked, heating, asleep, adjust)
+ * - Settings menu navigation
+ *
+ * @return 0 on success, negative error code on failure
  */
 int interface_task(void) {
     int res;
