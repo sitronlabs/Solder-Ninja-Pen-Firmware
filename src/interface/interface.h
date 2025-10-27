@@ -1,6 +1,9 @@
 #ifndef INTERFACE_H
 #define INTERFACE_H
 
+/* C/C++ headers */
+#include <stdint.h>
+
 /* Config */
 #include "../../cfg/config.h"
 #ifndef CONFIG_UI_DISPLAY_WIDTH
@@ -18,6 +21,23 @@
 #ifndef CONFIG_UI_ADJUST_DURATION
 #define CONFIG_UI_ADJUST_DURATION 1000  //!< Amount of time the target temperature is displayed before reverting to the measured temperature (in milliseconds).
 #endif
+
+/**
+ * @brief Interface icon structure
+ *
+ * This structure represents an icon that can be displayed on the interface.
+ * Icons are generated automatically from PNG files in the res/icons/ directory.
+ * But for reference, an online converter can be used at https://javl.github.io/image2cpp/
+ *
+ * @param width The width of the icon (in pixels).
+ * @param height The height of the icon (in pixels).
+ * @param data The data of the icon (in bytes).
+ */
+struct interface_icon {
+    const uint8_t width;
+    const uint8_t height;
+    const uint8_t data[];
+};
 
 /**
  * @brief Initialize the user interface system

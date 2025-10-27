@@ -2,6 +2,7 @@
 #include "interface.h"
 
 /* Project headers */
+#include "../gen/icons.h"
 #include "../gen/version.h"
 #include "app/app.h"
 #include "element/element.h"
@@ -21,9 +22,6 @@
 /* Pico headers */
 #include <pico/bootrom.h>
 #endif
-
-/* C/C++ headers */
-#include <stdint.h>
 
 /* Local variables */
 static ssd1306 m_library(CONFIG_UI_DISPLAY_WIDTH, CONFIG_UI_DISPLAY_HEIGHT);
@@ -52,20 +50,6 @@ static enum {
     STATE_MENU_DISPLAY_BRIGHTNESS_1,
     STATE_MENU_UPDATE_0,
 } m_sm;
-
-/* Icon bitmaps */
-const uint8_t m_icon_ninja[32] = {0x03, 0xF8, 0x07, 0xFC, 0x0F, 0xFE, 0xDF, 0xFF, 0x7F, 0xFF, 0x78, 0x03, 0x73, 0x33, 0x73, 0x31, 0xF0, 0x03, 0x1F, 0xFF, 0x1F, 0xFF, 0x1F, 0xFE, 0x0F, 0xFE, 0x0F, 0xFC, 0x07, 0xF8, 0x01, 0xF0};
-const uint8_t m_icon_bolt[32] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x60, 0x00, 0xE0, 0x01, 0xC0, 0x03, 0xC0, 0x07, 0xF0, 0x0F, 0xE0, 0x03, 0xC0, 0x03, 0x80, 0x07, 0x00, 0x06, 0x00, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00};
-const uint8_t m_icon_boost[32] = {0x00, 0x00, 0x08, 0x00, 0x1c, 0x30, 0x08, 0x60, 0x00, 0xe0, 0x01, 0xc0, 0x03, 0xc0, 0x07, 0xf0, 0x0f, 0xe0, 0x03, 0xc0, 0x03, 0x80, 0x07, 0x00, 0x06, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00};
-const uint8_t m_icon_lock[32] = {0x00, 0x00, 0x03, 0xC0, 0x07, 0xE0, 0x0C, 0x30, 0x0C, 0x30, 0x0C, 0x30, 0x1F, 0xF8, 0x1F, 0xF8, 0x1E, 0x78, 0x1E, 0x78, 0x1E, 0x78, 0x1F, 0xF8, 0x1F, 0xF8, 0x0F, 0xF0, 0x00, 0x00, 0x00, 0x00};
-const uint8_t m_icon_sleep[32] = {0x00, 0x00, 0x7F, 0x00, 0x02, 0x00, 0x04, 0x00, 0x08, 0x00, 0x10, 0x00, 0x20, 0x3E, 0x7F, 0x04, 0x00, 0x08, 0x00, 0x10, 0x3E, 0x3E, 0x04, 0x00, 0x08, 0x00, 0x10, 0x00, 0x3E, 0x00, 0x00, 0x00};
-const uint8_t m_icon_thermometer[32] = {0x01, 0x00, 0x02, 0x80, 0x04, 0x58, 0x05, 0x40, 0x05, 0x58, 0x05, 0x40, 0x05, 0x58, 0x05, 0x40, 0x05, 0x40, 0x09, 0x20, 0x13, 0x90, 0x17, 0xD0, 0x13, 0x90, 0x09, 0x20, 0x04, 0x40, 0x03, 0x80};
-const uint8_t m_icon_degrees_c[32] = {0x00, 0x00, 0xE0, 0x00, 0xA0, 0x00, 0xE0, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x0F, 0x00, 0x30, 0xC0, 0x30, 0xC0, 0x30, 0x00, 0x30, 0x00, 0x30, 0xC0, 0x30, 0xC0, 0x0F, 0x00, 0x0F, 0x00, 0x00, 0x00};
-const uint8_t m_icon_degrees_f[32] = {0x00, 0x00, 0xE0, 0x00, 0xA0, 0x00, 0xE0, 0x00, 0x00, 0x00, 0x3F, 0xC0, 0x3F, 0xC0, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x3F, 0x00, 0x3F, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x00, 0x00};
-const uint8_t m_icon_settings[32] = {0x00, 0x00, 0x00, 0x00, 0x3f, 0xf8, 0x40, 0x04, 0x49, 0x24, 0x4b, 0xa4, 0x49, 0x24, 0x49, 0x24, 0x49, 0x24, 0x5d, 0x24, 0x49, 0x74, 0x49, 0x24, 0x40, 0x04, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00};
-const uint8_t m_icon_product_information[32] = {0x00, 0x00, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0x80, 0x02, 0x80, 0x02, 0x00, 0x00, 0xea, 0xba, 0xaa, 0xaa, 0xaa, 0xaa, 0xea, 0xba, 0x00, 0x00};
-const uint8_t m_icon_firmware_version[32] = {0x00, 0x00, 0x1c, 0x38, 0x22, 0x44, 0x22, 0x44, 0x22, 0x44, 0x1c, 0x38, 0x08, 0x10, 0x08, 0xe0, 0x0f, 0x00, 0x08, 0x00, 0x1c, 0x00, 0x22, 0x00, 0x22, 0x00, 0x22, 0x00, 0x1c, 0x00, 0x00, 0x00};
-const uint8_t m_icon_firmware_update[32] = {0x00, 0x00, 0x02, 0x40, 0x3f, 0xf8, 0x40, 0x04, 0x41, 0x04, 0x41, 0x04, 0xc1, 0x06, 0x41, 0x04, 0x41, 0x04, 0xc5, 0x46, 0x43, 0x84, 0x41, 0x04, 0x40, 0x04, 0x3f, 0xf8, 0x02, 0x40, 0x00, 0x00};
 
 /**
  * @brief Initialize the user interface system
@@ -198,7 +182,7 @@ int interface_task(void) {
 
             /* Display splash page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_ninja, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_ninja.data, k_icon_ninja.width, k_icon_ninja.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Solder");
@@ -234,7 +218,7 @@ int interface_task(void) {
 
             /* Display version info */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_firmware_version, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_firmware_version.data, k_icon_firmware_version.width, k_icon_firmware_version.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.printf("v%u.%u.%u", k_version_major, k_version_minor, k_version_patch);
@@ -274,7 +258,7 @@ int interface_task(void) {
 
             /* Display product info */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_product_information, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_serialnumber.data, k_icon_serialnumber.width, k_icon_serialnumber.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.printf(product_number);
@@ -386,7 +370,7 @@ int interface_task(void) {
 
             /* Display monitor page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_lock, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_lock.data, k_icon_lock.width, k_icon_lock.height, 1);
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (element_connected_get()) {
@@ -397,10 +381,10 @@ int interface_task(void) {
                 } else {
                     if (fahrenheit) {
                         m_library.printf("%03.0f", temperature_c * 1.8 + 32);
-                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_f.data, k_icon_degrees_f.width, k_icon_degrees_f.height, 1);
                     } else {
                         m_library.printf("%03.0f", temperature_c);
-                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_c.data, k_icon_degrees_c.width, k_icon_degrees_c.height, 1);
                     }
                 }
             } else {
@@ -463,14 +447,14 @@ int interface_task(void) {
                 static uint32_t m_boost_warning_timestamp;
                 if ((millis() - m_boost_warning_timestamp) >= 1000) {
                     m_boost_warning_timestamp = millis();
-                    m_library.drawBitmap(0, 0, m_icon_bolt, 16, 16, 1);
+                    m_library.drawBitmap(0, 0, k_icon_bolt.data, k_icon_bolt.width, k_icon_bolt.height, 1);
                 } else if ((millis() - m_boost_warning_timestamp) >= 500) {
-                    m_library.drawBitmap(0, 0, m_icon_bolt, 16, 16, 1);
+                    m_library.drawBitmap(0, 0, k_icon_bolt.data, k_icon_bolt.width, k_icon_bolt.height, 1);
                 } else {
-                    m_library.drawBitmap(0, 0, m_icon_boost, 16, 16, 1);
+                    m_library.drawBitmap(0, 0, k_icon_bolt_plus.data, k_icon_bolt_plus.width, k_icon_bolt_plus.height, 1);
                 }
             } else {
-                m_library.drawBitmap(0, 0, m_icon_bolt, 16, 16, 1);
+                m_library.drawBitmap(0, 0, k_icon_bolt.data, k_icon_bolt.width, k_icon_bolt.height, 1);
             }
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
@@ -482,10 +466,10 @@ int interface_task(void) {
                 } else {
                     if (fahrenheit) {
                         m_library.printf("%03.0f", temperature_c * 1.8 + 32);
-                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_f.data, k_icon_degrees_f.width, k_icon_degrees_f.height, 1);
                     } else {
                         m_library.printf("%03.0f", temperature_c);
-                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_c.data, k_icon_degrees_c.width, k_icon_degrees_c.height, 1);
                     }
                 }
             } else {
@@ -566,7 +550,7 @@ int interface_task(void) {
 
             /* Display monitor page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_sleep, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_sleep.data, k_icon_sleep.width, k_icon_sleep.height, 1);
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (element_connected_get()) {
@@ -577,10 +561,10 @@ int interface_task(void) {
                 } else {
                     if (fahrenheit) {
                         m_library.printf("%03.0f", temperature_c * 1.8 + 32);
-                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_f.data, k_icon_degrees_f.width, k_icon_degrees_f.height, 1);
                     } else {
                         m_library.printf("%03.0f", temperature_c);
-                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                        m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_c.data, k_icon_degrees_c.width, k_icon_degrees_c.height, 1);
                     }
                 }
             } else {
@@ -655,15 +639,15 @@ int interface_task(void) {
 
             /* Display monitor page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_thermometer, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_thermometer.data, k_icon_thermometer.width, k_icon_thermometer.height, 1);
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (fahrenheit) {
                 m_library.printf("%03.0f", app_target_get() * 1.8 + 32);
-                m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_f, 10, 16, 1);
+                m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_f.data, k_icon_degrees_f.width, k_icon_degrees_f.height, 1);
             } else {
                 m_library.printf("%03.0f", app_target_get());
-                m_library.drawBitmap(17 + 12 + 12 + 12, 0, m_icon_degrees_c, 10, 16, 1);
+                m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_c.data, k_icon_degrees_c.width, k_icon_degrees_c.height, 1);
             }
             m_library.display();
 
@@ -699,7 +683,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Settings");
@@ -741,7 +725,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Units");
@@ -778,7 +762,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Settings");
@@ -821,7 +805,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Disp rot.");
@@ -859,7 +843,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Settings");
@@ -902,7 +886,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_settings, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Disp bright.");
@@ -951,7 +935,7 @@ int interface_task(void) {
 
             /* Display menu page */
             m_library.clear();
-            m_library.drawBitmap(0, 0, m_icon_firmware_update, 16, 16, 1);
+            m_library.drawBitmap(0, 0, k_icon_firmware_update.data, k_icon_firmware_update.width, k_icon_firmware_update.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
             m_library.print("Settings");
