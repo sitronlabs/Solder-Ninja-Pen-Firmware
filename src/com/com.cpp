@@ -49,7 +49,7 @@ int com_command_process(const char *const str, const size_t len) {
     if (doc[F("action")] == F("firmware_version_get")) {
         StaticJsonDocument<128> response;
         response["result"] = "success";
-        response["firmware_version"] = version_string;
+        response["firmware_version"] = k_version_string;
         serializeJson(response, Serial);
         Serial.println();
     }

@@ -220,9 +220,9 @@ int interface_task(void) {
             m_library.drawBitmap(0, 0, m_icon_firmware_version, 16, 16, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
-            m_library.printf("v%u.%u.%u", version_major, version_minor, version_patch);
+            m_library.printf("v%u.%u.%u", k_version_major, k_version_minor, k_version_patch);
             m_library.setCursor(20, 9);
-            m_library.print(version_commit);
+            m_library.print(k_version_commit);
             m_library.display();
 
             /* Move on */
