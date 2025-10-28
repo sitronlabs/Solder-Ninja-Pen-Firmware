@@ -8,17 +8,33 @@ int app_setup(void);
 enum app_state {
     APP_STATE_LOCKED,
     APP_STATE_ASLEEP,
-    APP_STATE_HEATING,  // Conditions for going to heating : have a connected element, no locks
+    APP_STATE_ACTIVE,
 };
 enum app_state app_state_get(void);
 
 /* Sleeping */
-int app_sleep(void);
-int app_wake(void);
+enum app_sleep_reason {
+    APP_SLEEP_REASON_MOTION,
+    APP_SLEEP_REASON_MAGNET,
+};
+int app_sleep(enum app_sleep_reason reason);
+enum app_wake_reason {
+    APP_WAKE_REASON_BUTTONS,
+    APP_WAKE_REASON_MOTION,
+    APP_WAKE_REASON_MAGNET,
+};
+int app_wake(enum app_wake_reason reason);
 
 /* Locking */
-int app_lock(void);
-int app_unlock(void);
+enum app_lock_reason {
+    APP_LOCK_REASON_BUTTONS,
+    APP_LOCK_REASON_FREFALL,
+};
+int app_lock(enum app_lock_reason reason);
+enum app_unlock_reason {
+    APP_UNLOCK_REASON_BUTTONS,
+};
+int app_unlock(enum app_unlock_reason reason);
 
 /* Target temperature */
 float app_target_get(void);

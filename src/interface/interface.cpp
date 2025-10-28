@@ -145,34 +145,44 @@ int interface_task(void) {
 
     /* Handle magnet sensor */
     static enum {
-        STATE_0_MAGNET_NOT_DETECTED,
-        STATE_1_MAGNET_DETECTED,
+        STATE_MAGNET_0_NOT_DETECTED,
+        STATE_MAGNET_1_DETECTED,
     } m_magnet_sm;
     switch (m_magnet_sm) {
 
-        case STATE_0_MAGNET_NOT_DETECTED: {
+        case STATE_MAGNET_0_NOT_DETECTED: {
 
             /* Wait for magnet to be detected */
             if (magnet_detected_get() == true) {
-                if (app_state_get() == APP_STATE_HEATING) {
-                    app_sleep();
-                }
-                m_magnet_sm = STATE_1_MAGNET_DETECTED;
+                app_sleep(APP_SLEEP_REASON_MAGNET);
+                m_magnet_sm = STATE_MAGNET_1_DETECTED;
             }
             break;
         }
 
-        case STATE_1_MAGNET_DETECTED: {
+        case STATE_MAGNET_1_DETECTED: {
 
             /* Wait for magnet to not be detected */
             if (magnet_detected_get() == false) {
-                if (app_state_get() == APP_STATE_ASLEEP) {
-                    app_wake();
-                }
-                m_magnet_sm = STATE_0_MAGNET_NOT_DETECTED;
+                app_wake(APP_WAKE_REASON_MAGNET);
+                m_magnet_sm = STATE_MAGNET_0_NOT_DETECTED;
             }
             break;
         }
+    }
+
+    /* Handle accelerometer */
+    if (accelerometer_wake_detected_get() > 0) {
+        accelerometer_wake_reset();
+        app_wake(APP_WAKE_REASON_MOTION);
+    }
+    if (accelerometer_idle_detected_get() > 0) {
+        accelerometer_idle_reset();
+        app_sleep(APP_SLEEP_REASON_MOTION);
+    }
+    if (accelerometer_fall_detected_get() > 0) {
+        accelerometer_fall_reset();
+        app_lock(APP_LOCK_REASON_FREFALL);
     }
 
     /* Handle user interface */
@@ -330,25 +340,18 @@ int interface_task(void) {
             /* Move on according to app state */
             switch (app_state_get()) {
                 case APP_STATE_LOCKED: {
-                    log_d("Redirect to STATE_MONITOR_LOCKED");
                     m_sm = STATE_MONITOR_LOCKED;
                     break;
                 }
-                case APP_STATE_HEATING: {
-                    log_d("Redirect to STATE_MONITOR_HEATING");
-                    accelerometer_idle_reset();
-                    accelerometer_fall_reset();
+                case APP_STATE_ACTIVE: {
                     m_sm = STATE_MONITOR_HEATING;
                     break;
                 }
                 case APP_STATE_ASLEEP: {
-                    log_d("Redirect to STATE_MONITOR_ASLEEP");
-                    accelerometer_wake_reset();
                     m_sm = STATE_MONITOR_ASLEEP;
                     break;
                 }
                 default: {
-                    log_e("Unexpected state!");
                     m_sm = STATE_SPLASH_0;
                     return -ERROR_STATE_UNEXPECTED;
                 }
@@ -411,12 +414,12 @@ int interface_task(void) {
              * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_unlock();
+                    app_unlock(APP_UNLOCK_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock();
+                    app_lock(APP_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
@@ -432,7 +435,7 @@ int interface_task(void) {
         case STATE_MONITOR_HEATING: {
 
             /* Ensure app state is still coherent */
-            if (app_state_get() != APP_STATE_HEATING) {
+            if (app_state_get() != APP_STATE_ACTIVE) {
                 m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
@@ -491,13 +494,6 @@ int interface_task(void) {
             }
             m_library.display();
 
-            /* Handle accelerometer */
-            if (accelerometer_fall_detected_get()) {
-                app_lock();
-            } else if (accelerometer_idle_detected_get()) {
-                app_sleep();
-            }
-
             /* Handle buttons
              * Short and long presses on either button will adjust target temperature
              * A short press on both buttons will trigger a lock
@@ -518,12 +514,12 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_lock();
+                    app_lock(APP_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock();
+                    app_lock(APP_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
@@ -586,13 +582,6 @@ int interface_task(void) {
             }
             m_library.display();
 
-            /* Handle accelerometer */
-            if (accelerometer_fall_detected_get()) {
-                app_lock();
-            } else if (accelerometer_wake_detected_get()) {
-                app_wake();
-            }
-
             /* Handle buttons
              * Short and long presses on either button will trigger a wake
              * A short press on both buttons will trigger a lock
@@ -602,17 +591,17 @@ int interface_task(void) {
                 case BUTTONS_EVENT_LEFT_LONG:
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
-                    app_wake();
+                    app_wake(APP_WAKE_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_lock();
+                    app_lock(APP_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock();
+                    app_lock(APP_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MENU_HOME;
                     break;
                 }

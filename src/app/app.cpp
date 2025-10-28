@@ -11,7 +11,9 @@
 #include "../cfg/config.h"
 
 /* Local variables */
-static enum app_state m_state = APP_STATE_LOCKED;
+static bool m_sleep_inactivity = false;
+static bool m_sleep_stand = false;
+static bool m_lock = false;
 static float m_target = 350;
 static bool m_target_changed = false;
 static uint32_t m_target_changed_timestamp;
@@ -53,19 +55,28 @@ int app_setup(void) {
  *
  */
 enum app_state app_state_get(void) {
-    return m_state;
+    if (m_lock) {
+        return APP_STATE_LOCKED;
+    } else if (m_sleep_inactivity || m_sleep_stand) {
+        return APP_STATE_ASLEEP;
+    } else {
+        return APP_STATE_ACTIVE;
+    }
 }
 
 /**
  *
  */
-int app_sleep(void) {
+int app_sleep(enum app_sleep_reason reason) {
 
-    /* Transition to sleep state
-     * if we are heating */
-    if (m_state == APP_STATE_HEATING) {
-        element_heating_disable();
-        m_state = APP_STATE_ASLEEP;
+    /* Disable heating */
+    element_heating_disable();
+
+    /* Update sleep flags */
+    if (reason == APP_SLEEP_REASON_MOTION) {
+        m_sleep_inactivity = true;
+    } else if (reason == APP_SLEEP_REASON_MAGNET) {
+        m_sleep_stand = true;
     }
 
     /* Return success */
@@ -75,14 +86,23 @@ int app_sleep(void) {
 /**
  *
  */
-int app_wake(void) {
+int app_wake(enum app_wake_reason reason) {
 
-    /* Transition to heating state
-     * if and only if we were asleep */
-    if (m_state == APP_STATE_ASLEEP) {
+    /* Update sleep flags */
+    if (reason == APP_WAKE_REASON_MOTION ||
+        reason == APP_WAKE_REASON_BUTTONS) {
+        m_sleep_inactivity = false;
+    } else if (reason == APP_WAKE_REASON_MAGNET) {
+        m_sleep_stand = false;
+    }
+
+    /* Enable heating
+     * @todo Prevent transitionning to heating if not enough power?
+     * @todo Check power available by asking power_xxx()
+     * @todo If not enough power, return specific error code */
+    if (app_state_get() == APP_STATE_ACTIVE) {
         element_temperature_target_set(m_target);
         element_heating_enable();
-        m_state = APP_STATE_HEATING;
     }
 
     /* Return success */
@@ -92,11 +112,13 @@ int app_wake(void) {
 /**
  *
  */
-int app_lock(void) {
+int app_lock(enum app_lock_reason reason) {
 
-    /* Transition to locked state */
+    /* Disable heating */
     element_heating_disable();
-    m_state = APP_STATE_LOCKED;
+
+    /* Update lock flags */
+    m_lock = true;
 
     /* Return success */
     return 0;
@@ -105,12 +127,19 @@ int app_lock(void) {
 /**
  *
  */
-int app_unlock(void) {
+int app_unlock(enum app_unlock_reason reason) {
 
-    /* Transition to heating state */
-    element_temperature_target_set(m_target);
-    element_heating_enable();
-    m_state = APP_STATE_HEATING;
+    /* Update lock flags */
+    m_lock = false;
+
+    /* Enable heating
+     * @todo Prevent transitionning to heating if not enough power?
+     * @todo Check power available by asking power_xxx()
+     * @todo If not enough power, return specific error code */
+    if (app_state_get() == APP_STATE_ACTIVE) {
+        element_temperature_target_set(m_target);
+        element_heating_enable();
+    }
 
     /* Return success */
     return 0;
@@ -211,7 +240,8 @@ int app_task(void) {
 
     /* Lock if element has been disconnected */
     if (element_connected_get() == false) {
-        app_lock();
+        element_heating_disable();
+        m_lock = true;
     }
 
     /* Disable boost after a while */

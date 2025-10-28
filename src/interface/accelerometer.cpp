@@ -166,7 +166,7 @@ int accelerometer_task(void) {
                 m_sm = STATE_ERROR;
             }
 
-            /* Perform a dummy read to force the HP filter to the current acceleration value*/
+            /* Perform a dummy read to force the HP filter to the current acceleration value */
             uint8_t reg;
             res |= m_accel.register_read(LIS2DH12_REGISTER_REFERENCE, reg);
             if (res != 0) {
