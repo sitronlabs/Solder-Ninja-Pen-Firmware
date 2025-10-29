@@ -1,4 +1,5 @@
 /* Project */
+#include "../gen/version.h"
 #include "app/app.h"
 #include "com/com.h"
 #include "interface/interface.h"
@@ -73,6 +74,24 @@ void setup(void) {
     if (res < 0) {
         log_e("Failed to setup watchdog task!");
     }
+
+    /* Log some information */
+    log_i("Firmware version: %s", k_version_string);
+    char serial_number[CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH + 1] = {0};
+    res = settings_product_get(NULL, NULL, serial_number);
+    if (res < 0) {
+        log_i("Serial number: Not available");
+    } else {
+        log_i("Serial number: %s", serial_number);
+    }
+#if R8A
+    pico_unique_board_id_t id;
+    pico_get_unique_board_id(&id);
+    log_i("Board UID: %02X%02X%02X%02X%02X%02X%02X%02X", id.id[0], id.id[1], id.id[2], id.id[3], id.id[4], id.id[5], id.id[6], id.id[7]);
+#endif
+
+    /* That's it */
+    log_i("Setup done.");
 }
 
 /*
