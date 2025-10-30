@@ -328,6 +328,49 @@ int controller_task(void) {
         m_boost_activated = false;
     }
 
+    /* Keep track of heating time for diagnostics */
+    static enum {
+        STATE_DIAG_0,
+        STATE_DIAG_1,
+    } m_diagnostics_sm;
+    static uint32_t m_diagnostics_time_start;
+    switch (m_diagnostics_sm) {
+
+        case STATE_DIAG_0: {
+
+            /* Wait until heating starts */
+            if (controller_state_get() == CONTROLLER_STATE_ACTIVE) {
+
+                /* Start keeping track of time */
+                m_diagnostics_time_start = millis();
+
+                /* Move on */
+                m_diagnostics_sm = STATE_DIAG_1;
+            }
+            break;
+        }
+
+        case STATE_DIAG_1: {
+
+            /* Compute ellapsed time */
+            uint32_t time_ellapsed_ms = millis() - m_diagnostics_time_start;
+
+            /* Either after 60s, or if not heating anymore */
+            if ((controller_state_get() != CONTROLLER_STATE_ACTIVE) || (time_ellapsed_ms >= 60000)) {
+
+                /* Increment settings with accumulated time */
+                res = settings_diagnostics_heating_time_increment(time_ellapsed_ms / 1000);
+                if (res < 0) {
+                    log_w("Failed to increment heating time in settings!");
+                }
+
+                /* Move on */
+                m_diagnostics_sm = STATE_DIAG_0;
+            }
+            break;
+        }
+    }
+
     /* Return success */
     return 0;
 }

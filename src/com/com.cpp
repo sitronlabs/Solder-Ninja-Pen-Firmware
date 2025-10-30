@@ -479,6 +479,36 @@ static int m_command_process(const char *const str, const size_t len) {
         Serial.println(F("{\"result\":\"success\"}"));
     }
 
+    /* Command to get heating time */
+    else if (doc[F("action")] == F("heating_time_get")) {
+        uint32_t heating_time = 0;
+        res = settings_diagnostics_heating_time_get(heating_time);
+        if (res == 1) {
+            StaticJsonDocument<128> response;
+            response["result"] = "success";
+            response["heating"]["time"] = heating_time;
+            serializeJson(response, Serial);
+            Serial.println();
+        } else {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"No heating time data!\"]}"));
+        }
+    }
+
+    /* Command to get max USB voltage */
+    else if (doc[F("action")] == F("usb_voltage_max_get")) {
+        float voltage = 0.0f;
+        res = settings_diagnostics_usb_voltage_max_get(voltage);
+        if (res == 1) {
+            StaticJsonDocument<128> response;
+            response["result"] = "success";
+            response["usb"]["voltage_max"] = voltage;
+            serializeJson(response, Serial);
+            Serial.println();
+        } else {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"No USB voltage data!\"]}"));
+        }
+    }
+
     /* Unknown command */
     else {
         Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Unknown command!\"]}"));

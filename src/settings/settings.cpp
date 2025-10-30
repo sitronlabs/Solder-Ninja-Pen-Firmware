@@ -1338,6 +1338,41 @@ int settings_accelerometer_idle_time_get(uint32_t &time_ms) {
 }
 
 /**
+ * @brief Get the total heating time in seconds
+ * @param[out] seconds Total heating time in seconds
+ * @return 1 if found, 0 if not found
+ */
+int settings_diagnostics_heating_time_get(uint32_t &seconds) {
+
+    /* Return if found */
+    if (m_doc["diagnostics"]["heating"]["time"].is<uint32_t>() == true) {
+        seconds = m_doc["diagnostics"]["heating"]["time"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief Increment the heating time in seconds
+ * @param[in] seconds Number of seconds to increment
+ * @return 0 in case of success, or a negative error code otherwise
+ */
+int settings_diagnostics_heating_time_increment(const uint32_t seconds) {
+
+    /* Update json document */
+    m_doc["diagnostics"]["heating"]["time"] = m_doc["diagnostics"]["heating"]["time"].as<uint32_t>() + seconds;
+
+    /* Mark settings as modified */
+    m_modified = true;
+    m_modified_immediate = true;
+
+    /* Return success */
+    return 0;
+}
+
+/**
  * @brief Set accelerometer idle time setting
  * @param[in] time_ms Idle time in milliseconds
  * @return 0 on success, negative error code on failure
@@ -1350,6 +1385,41 @@ int settings_accelerometer_idle_time_set(const uint32_t time_ms) {
     /* Mark settings as modified */
     m_modified = true;
     m_modified_timestamp = millis();
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Get the maximum USB voltage in volts
+ * @param[out] voltage Maximum USB voltage in volts
+ * @return 1 if found, 0 if not found
+ */
+int settings_diagnostics_usb_voltage_max_get(float &voltage) {
+
+    /* Return if found */
+    if (m_doc["diagnostics"]["usb"]["voltage_max"].is<float>() == true) {
+        voltage = m_doc["diagnostics"]["usb"]["voltage_max"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief Report and update the maximum USB voltage if higher than current value
+ * @param[in] voltage USB voltage in volts to report
+ * @return 0 on success
+ */
+int settings_diagnotics_usb_voltage_max_report(const float voltage) {
+
+    /* Update local value only if higher */
+    if (voltage > m_doc["diagnostics"]["usb"]["voltage_max"].as<float>()) {
+        m_doc["diagnostics"]["usb"]["voltage_max"] = voltage;
+        m_modified = true;
+        m_modified_immediate = true;
+    }
 
     /* Return success */
     return 0;

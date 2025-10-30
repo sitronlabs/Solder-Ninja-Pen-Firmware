@@ -633,6 +633,82 @@ Sets the accelerometer idle time (time after which no movement is interpreted as
 
 ---
 
+### 18. `heating_time_get`
+
+Retrieves the total heating time (diagnostics data).
+
+**C Function:** `int settings_diagnostics_heating_time_get(uint32_t &seconds)`
+
+**Request:**
+```json
+{"action": "heating_time_get"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success",
+  "heating": {
+    "time": 12345
+  }
+}
+```
+
+**Response Fields:**
+- `heating.time`: Total heating time in seconds (uint32_t)
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["No heating time data!"]
+}
+```
+
+**Notes:**
+- Returns diagnostics data stored in EEPROM
+- Value represents cumulative heating time
+
+---
+
+### 19. `usb_voltage_max_get`
+
+Retrieves the maximum USB voltage recorded (diagnostics data).
+
+**C Function:** `int settings_diagnostics_usb_voltage_max_get(float &voltage)`
+
+**Request:**
+```json
+{"action": "usb_voltage_max_get"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success",
+  "usb": {
+    "voltage_max": 5.2
+  }
+}
+```
+
+**Response Fields:**
+- `usb.voltage_max`: Maximum USB voltage recorded in volts (float)
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["No USB voltage data!"]
+}
+```
+
+**Notes:**
+- Returns diagnostics data stored in EEPROM
+- Value represents the maximum USB voltage detected during device operation
+
+---
+
 ## Failure Responses
 
 All commands follow a consistent failure response format:

@@ -4,6 +4,7 @@
 /* Project headers */
 #include "errors/errors.h"
 #include "log/log.h"
+#include "settings/settings.h"
 
 /* Arduino headers */
 #include <dac5311.h>
@@ -453,6 +454,7 @@ int power_task(void) {
     static float m_qc_voltage;
     static float m_qc_current;
     static uint32_t m_timestamp;
+    static float m_diag_voltage_max;
     static enum {
         STATE_IDLE,
         STATE_TC_0,
@@ -1110,6 +1112,12 @@ int power_task(void) {
                     m_errors_pd = 0;
                 }
 
+                /* Save max voltage in diagnostics */
+                if (vbus > m_diag_voltage_max) {
+                    m_diag_voltage_max = vbus;
+                    settings_diagnotics_usb_voltage_max_report(m_diag_voltage_max);
+                }
+
                 /* Ensure vbus is within 20% of the expected voltage
                  * @note The FUSB302 has a resolution of 0.42V per step, so we need to allow for this when checking the voltage */
                 if (((vbus + 0.42f) < (m_pd_voltage * 0.8)) || ((vbus - 0.42f) > (m_pd_voltage * 1.2))) {
@@ -1527,6 +1535,12 @@ int power_task(void) {
                     m_errors_qc = 0;
                 }
 
+                /* Save max voltage in diagnostics */
+                if (vbus > m_diag_voltage_max) {
+                    m_diag_voltage_max = vbus;
+                    settings_diagnotics_usb_voltage_max_report(m_diag_voltage_max);
+                }
+
                 /* Ensure vbus is within 20% of the expected voltage
                  * @note The FUSB302 has a resolution of 0.42V per step, so we need to allow for this when checking the voltage */
                 if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
@@ -1545,6 +1559,26 @@ int power_task(void) {
         }
 
         case STATE_DONE: {
+
+            /* Monitor vbus periodically
+             * @note While the FUSB302 is reading VBUS it cannot receive PD messages */
+            static uint32_t m_timestamp_vbus_monitor = 0;
+            if ((millis() - m_timestamp_vbus_monitor) >= 100) {
+                m_timestamp_vbus_monitor = millis();
+
+                /* Read vbus */
+                float vbus = 0;
+                res = m_fusb302.vbus_measure(vbus);
+                if (res < 0) {
+                    break;
+                }
+
+                /* Save max voltage in diagnostics */
+                if (vbus > m_diag_voltage_max) {
+                    m_diag_voltage_max = vbus;
+                    settings_diagnotics_usb_voltage_max_report(m_diag_voltage_max);
+                }
+            }
 
             /* Stay here */
             break;
