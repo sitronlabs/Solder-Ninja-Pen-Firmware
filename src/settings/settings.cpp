@@ -395,17 +395,17 @@ static int m_load(void) {
                  * Note, for now, all solder ninja products are expected to have a a M24C64 eeprom,
                  * but later on this is where we could have fun attempting to detect the eeprom type and size */
                 uint8_t header[CONFIG_SETTINGS_EEPROM_HEADER_SIZE] = {0};
-                header[0] = 1;                                            // Header Version
-                header[1] = CONFIG_SETTINGS_EEPROM_HEADER_SIZE;           // Header Length
-                header[2] = ((uint32_t)m_eeprom.size_total_get()) >> 24;  // Eeprom Total Size
-                header[3] = ((uint32_t)m_eeprom.size_total_get()) >> 16;  // Eeprom Total Size
-                header[4] = ((uint32_t)m_eeprom.size_total_get()) >> 8;   // Eeprom Total Size
-                header[5] = ((uint32_t)m_eeprom.size_total_get()) >> 0;   // Eeprom Total Size
-                header[6] = ((uint32_t)m_eeprom.size_page_get()) >> 8;    // Eeprom Page Size
-                header[7] = ((uint32_t)m_eeprom.size_page_get()) >> 0;    // Eeprom Page Size
-                strlcpy((char *)&header[8], "M24C64-FMH6TG", 17);         // Eeprom IC Name
-                header[25] = 2;                                           // Copy Count
-                header[31] = m_crc8(&header[0], 31);                      // CRC-8
+                header[0] = 1;                                                     // Header Version
+                header[1] = CONFIG_SETTINGS_EEPROM_HEADER_SIZE;                    // Header Length
+                header[2] = (((uint32_t)m_eeprom.size_total_get()) >> 24) & 0xFF;  // Eeprom Total Size
+                header[3] = (((uint32_t)m_eeprom.size_total_get()) >> 16) & 0xFF;  // Eeprom Total Size
+                header[4] = (((uint32_t)m_eeprom.size_total_get()) >> 8) & 0xFF;   // Eeprom Total Size
+                header[5] = (((uint32_t)m_eeprom.size_total_get()) >> 0) & 0xFF;   // Eeprom Total Size
+                header[6] = (((uint16_t)m_eeprom.size_page_get()) >> 8) & 0xFF;    // Eeprom Page Size
+                header[7] = (((uint16_t)m_eeprom.size_page_get()) >> 0) & 0xFF;    // Eeprom Page Size
+                strlcpy((char *)&header[8], "M24C64-FMH6TG", 17);                  // Eeprom IC Name
+                header[25] = 2;                                                    // Copy Count
+                header[31] = m_crc8(&header[0], 31);                               // CRC-8
 
                 /* Write header to eeprom */
                 res = m_eeprom.write(0, header, CONFIG_SETTINGS_EEPROM_HEADER_SIZE);
@@ -886,6 +886,9 @@ static int m_save(void) {
 
                 /* Write document to file */
                 size_t bytes_written = serializeJsonPretty(doc_filtered, write_file);
+                if (bytes_written <= 0) {
+                    log_w("Failed to save settings to flash!");
+                }
                 write_file.close();
                 flash_save_success = true;
 
