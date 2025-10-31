@@ -124,7 +124,8 @@ static struct {
     size_t index = 0;
     uint32_t crc = 0;
 
-    /* Reads one byte, or returns -1 */
+    /** @brief Reads one byte
+     * @return the byte read, or -1 on failure */
     int read(void) {
         uint8_t c;
         int res = m_eeprom.read(index, &c, 1);
@@ -137,7 +138,8 @@ static struct {
         return c;
     }
 
-    /* Reads several bytes, returns the number of bytes read. */
+    /** @brief Reads several bytes
+     * @return the number of bytes read */
     size_t readBytes(char *buffer, size_t length) {
         int res = m_eeprom.read(index, (uint8_t *)buffer, length);
         if (res < 0) {
@@ -156,6 +158,7 @@ static struct {
  *
  * This struct provides write methods compatible with ArduinoJson's custom Writer interface,
  * enabling automatic calculation of a running CRC-32 value over all data written to eeprom.
+ * The writer buffers data to perform page-sized writes for better performance.
  *
  * @see https://arduinojson.org/v6/api/json/serializejson/#custom-writer
  */
@@ -163,9 +166,10 @@ static struct {
     size_t index = 0;
     uint32_t crc = 0;
 
-    /* Writes one byte, returns the number of bytes written (0 or 1) */
+    /** @brief Writes one byte
+     * @return the number of bytes written (0 or 1) */
     size_t write(uint8_t c) {
-        int res = m_eeprom.write(index, &c, 1);
+        int res = m_eeprom.buffered_write(index, &c, 1);
         if (res < 0) {
             log_e("Failed to write to eeprom!");
             return 0;
@@ -175,9 +179,10 @@ static struct {
         return res;
     }
 
-    /* Writes several bytes, returns the number of bytes written */
+    /** @brief Writes several bytes
+     * @return the number of bytes written */
     size_t write(const uint8_t *buffer, size_t length) {
-        int res = m_eeprom.write(index, buffer, length);
+        int res = m_eeprom.buffered_write(index, buffer, length);
         if (res < 0) {
             log_e("Failed to write to eeprom!");
             return 0;
@@ -186,7 +191,13 @@ static struct {
         index += res;
         return res;
     }
-} m_eeprom_writer;
+
+    /** @brief Flush any pending buffered writes to the EEPROM
+     * @return 0 on success, negative error code on failure */
+    int flush(void) {
+        return m_eeprom.buffer_flush();
+    }
+} m_eeprom_writer_buffered;
 
 /**
  * @brief Struct that acts as a custom writer for json to compute its CRC-32 hash.
@@ -354,19 +365,20 @@ static int m_load(void) {
                 }
 
                 /* Shift old settings after header */
-                m_eeprom_writer.index = CONFIG_SETTINGS_EEPROM_HEADER_SIZE;
-                m_eeprom_writer.crc = 0;
-                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+                m_eeprom_writer_buffered.index = CONFIG_SETTINGS_EEPROM_HEADER_SIZE;
+                m_eeprom_writer_buffered.crc = 0;
+                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer_buffered);
                 if (repack_res <= 0) {
                     log_e("Failed to shift to eeprom copy A!");
                     m_load_sm = STATE_EEPROM_HEADER_REBUILD;
                     break;
                 }
-                m_eeprom.seek_write(m_eeprom_writer.index);
-                m_eeprom.write(m_eeprom_writer.crc >> 24);
-                m_eeprom.write(m_eeprom_writer.crc >> 16);
-                m_eeprom.write(m_eeprom_writer.crc >> 8);
-                m_eeprom.write(m_eeprom_writer.crc >> 0);
+                m_eeprom_writer_buffered.flush();
+                m_eeprom.seek_write(m_eeprom_writer_buffered.index);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 24);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 16);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 8);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 0);
                 log_i("Successfully shifted old settings to copy A.");
 
                 /* Move on */
@@ -735,19 +747,20 @@ static int m_save(void) {
             case STATE_EEPROM_1: {
 
                 /* First, save to copy B */
-                m_eeprom_writer.index = m_eeprom_copy[1].start;
-                m_eeprom_writer.crc = 0;
-                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+                m_eeprom_writer_buffered.index = m_eeprom_copy[1].start;
+                m_eeprom_writer_buffered.crc = 0;
+                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer_buffered);
                 if (repack_res <= 0) {
                     log_e("Failed to save settings to copy B!");
                     m_save_sm = STATE_EEPROM_2;
                     break;
                 }
-                m_eeprom.seek_write(m_eeprom_writer.index);
-                m_eeprom.write(m_eeprom_writer.crc >> 24);
-                m_eeprom.write(m_eeprom_writer.crc >> 16);
-                m_eeprom.write(m_eeprom_writer.crc >> 8);
-                m_eeprom.write(m_eeprom_writer.crc >> 0);
+                m_eeprom_writer_buffered.flush();
+                m_eeprom.seek_write(m_eeprom_writer_buffered.index);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 24);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 16);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 8);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 0);
                 eeprom_save_success = true;
 
                 /* Log */
@@ -761,18 +774,19 @@ static int m_save(void) {
             case STATE_EEPROM_2: {
 
                 /* Second, save to copy A */
-                m_eeprom_writer.index = m_eeprom_copy[0].start;
-                m_eeprom_writer.crc = 0;
-                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer);
+                m_eeprom_writer_buffered.index = m_eeprom_copy[0].start;
+                m_eeprom_writer_buffered.crc = 0;
+                size_t repack_res = serializeMsgPack(m_doc, m_eeprom_writer_buffered);
                 if (repack_res <= 0) {
                     log_e("Failed to save settings to copy A!");
                     return -EIO;
                 }
-                m_eeprom.seek_write(m_eeprom_writer.index);
-                m_eeprom.write(m_eeprom_writer.crc >> 24);
-                m_eeprom.write(m_eeprom_writer.crc >> 16);
-                m_eeprom.write(m_eeprom_writer.crc >> 8);
-                m_eeprom.write(m_eeprom_writer.crc >> 0);
+                m_eeprom_writer_buffered.flush();
+                m_eeprom.seek_write(m_eeprom_writer_buffered.index);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 24);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 16);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 8);
+                m_eeprom.write(m_eeprom_writer_buffered.crc >> 0);
                 eeprom_save_success = true;
 
                 /* Log */
