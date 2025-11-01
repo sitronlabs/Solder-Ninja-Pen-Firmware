@@ -157,8 +157,42 @@ int controller_unlock(enum controller_unlock_reason reason) {
 /**
  *
  */
-float controller_target_get(void) {
-    return m_target;
+int controller_temperature_target_get(float &temperature_c) {
+
+    /* Return target temperature */
+    temperature_c = m_target;
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ *
+ */
+int controller_temperature_target_set(const float temperature_c) {
+
+    /* Save and cap new target */
+    m_target = temperature_c;
+    if (m_target > CONFIG_CONTROLLER_TARGET_MAX_BOOST) {
+        m_target = CONFIG_CONTROLLER_TARGET_MAX_BOOST;
+    } else if (m_target < CONFIG_CONTROLLER_TARGET_MIN) {
+        m_target = CONFIG_CONTROLLER_TARGET_MIN;
+    }
+
+    /* If over the safe limit, save the timestamp to revert to the safe limit after a while */
+    if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
+        m_boost_activated = true;
+        m_boost_timestamp = millis();
+    }
+
+    /* Save new target to settings */
+    settings_temperature_target_set(m_target);
+
+    /* Pass along */
+    element_temperature_target_set(m_target);
+
+    /* Return success */
+    return 0;
 }
 
 /**
@@ -166,7 +200,7 @@ float controller_target_get(void) {
  * @param
  * @return
  */
-int controller_target_increase(void) {
+int controller_temperature_target_increase(void) {
 
     /* Compute new target */
     m_target += 10;
@@ -196,7 +230,7 @@ int controller_target_increase(void) {
  * @param
  * @return
  */
-int controller_target_decrease(void) {
+int controller_temperature_target_decrease(void) {
 
     /* Compute new target */
     m_target -= 10;
@@ -220,6 +254,23 @@ int controller_target_decrease(void) {
 
     /* Pass along */
     element_temperature_target_set(m_target);
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Get measured temperature
+ * @param[out] temperature_c
+ * @return 0 in case of success, or a negative error code otherwise
+ */
+int controller_temperature_measured_get(float &temperature_c) {
+
+    /* Pass along to element */
+    int res = element_temperature_measured_get(temperature_c);
+    if (res < 0) {
+        return -1;
+    }
 
     /* Return success */
     return 0;

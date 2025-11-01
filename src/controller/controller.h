@@ -28,18 +28,24 @@ int controller_wake(enum controller_wake_reason reason);
 /* Locking */
 enum controller_lock_reason {
     CONTROLLER_LOCK_REASON_BUTTONS,
+    CONTROLLER_LOCK_REASON_REMOTE,
     CONTROLLER_LOCK_REASON_FREFALL,
 };
 int controller_lock(enum controller_lock_reason reason);
 enum controller_unlock_reason {
     CONTROLLER_UNLOCK_REASON_BUTTONS,
+    CONTROLLER_UNLOCK_REASON_REMOTE,
 };
 int controller_unlock(enum controller_unlock_reason reason);
 
 /* Target temperature */
-float controller_target_get(void);
-int controller_target_increase(void);
-int controller_target_decrease(void);
+int controller_temperature_target_get(float &temperature_c);
+int controller_temperature_target_set(const float temperature_c);
+int controller_temperature_target_increase(void);
+int controller_temperature_target_decrease(void);
+
+/* Measured temperature */
+int controller_temperature_measured_get(float &temperature_c);
 
 /* Boost */
 bool controller_boost_activated_get(void);
@@ -65,4 +71,3 @@ bool controller_boost_activated_get(void);
 int controller_task(void);
 
 #endif
-

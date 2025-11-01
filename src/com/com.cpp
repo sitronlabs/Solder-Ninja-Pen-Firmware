@@ -2,9 +2,9 @@
 #include "com.h"
 
 /* Project */
-#include "../cfg/config.h"
 #include "../gen/version.h"
 #include "controller/controller.h"
+#include "element/element.h"
 #include "interface/accelerometer.h"
 #include "log/log.h"
 #include "settings/settings.h"
@@ -14,31 +14,38 @@
 #include <ArduinoJson.h>
 
 /**
- * @brief
- * @param
- * @return
+ * @brief Initialize serial communication interface
+ *
+ * Sets up the serial communication port for receiving and sending JSON commands.
+ *
+ * @return 0 on success (always returns 0)
  */
 int com_setup(void) {
 
 #if R8A
-    /* Setup uart over usb */
+    /* Initialize USB serial port at 115200 baud for command interface */
     Serial.begin(115200);
 #endif
 
     /* Return success */
     return 0;
 }
+
 /**
- * @brief
- * @param str
- * @param len
- * @return
+ * @brief Parse and execute a JSON command
+ *
+ * Parses the JSON command string, identifies the action, and executes the corresponding
+ * handler. Sends a JSON response to the serial port indicating success or failure.
+ *
+ * @param[in] str Pointer to the JSON command string (must be null-terminated or len-valid)
+ * @param[in] len Length of the command string in bytes
+ * @return 0 on success, negative error code on failure
  */
-int com_command_process(const char *const str, const size_t len) {
+static int m_command_process(const char *const str, const size_t len) {
     int res;
 
     /* Parse json */
-    static StaticJsonDocument<4 * CONFIG_COMMAND_LENGTH_LIMIT> doc;
+    static StaticJsonDocument<CONFIG_COMMAND_JSON_DOCUMENT_SIZE> doc;
     DeserializationError json_res = deserializeJson(doc, str, len);
     if (json_res != DeserializationError::Ok) {
         Serial.printf("{\"result\":\"failure\", \"errors\" : [\"Failed to parse command (%s)!\"]}\r\n", json_res.c_str());
@@ -48,18 +55,26 @@ int com_command_process(const char *const str, const size_t len) {
 
     /* Command to retrieve the firmware version */
     if (doc[F("action")] == F("firmware_version_get")) {
-        StaticJsonDocument<128> response;
+        StaticJsonDocument<512> response;
         response["result"] = "success";
-        response["firmware_version"] = k_version_string;
+        response["string"] = k_version_string;
+        response["core"]["major"] = k_version_major;
+        response["core"]["minor"] = k_version_minor;
+        response["core"]["patch"] = k_version_patch;
+        response["datetime"] = k_version_datetime_utc;
+        response["git"]["hash"] = k_version_commit;
+        response["git"]["branch"] = k_version_branch;
+        response["git"]["dirty"] = k_version_dirty;
+        response["git"]["post"] = k_version_post;
         serializeJson(response, Serial);
         Serial.println();
     }
 
     /* Command to dump eeprom contents */
-    else if (doc[F("action")] == F("settings_eeprom_dump")) {
+    else if (doc[F("action")] == F("eeprom_dump")) {
 
         /* Start response */
-        Serial.print("{\"settings\": [");
+        Serial.print("{\"data\": [");
 
         /* Read eeprom by chunks of arbitrary size to speed up reading while avoiding large memory allocations */
         bool failure = false;
@@ -96,7 +111,7 @@ int com_command_process(const char *const str, const size_t len) {
     }
 
     /* Command to read from eeprom */
-    else if (doc[F("action")] == F("settings_eeprom_read")) {
+    else if (doc[F("action")] == F("eeprom_read")) {
 
         /* Validate address */
         const size_t address = doc["address"] | 0;
@@ -109,7 +124,7 @@ int com_command_process(const char *const str, const size_t len) {
         }
 
         /* Start response */
-        Serial.print("{\"settings\": [");
+        Serial.print("{\"data\": [");
 
         /* Read eeprom by chunks of arbitrary size to speed up reading while avoiding large memory allocations */
         bool failure = false;
@@ -147,7 +162,7 @@ int com_command_process(const char *const str, const size_t len) {
     }
 
     /* Command to write to eeprom */
-    else if (doc[F("action")] == F("settings_eeprom_write")) {
+    else if (doc[F("action")] == F("eeprom_write")) {
 
         /* Validate address */
         const size_t address = doc["address"] | 0;
@@ -191,7 +206,7 @@ int com_command_process(const char *const str, const size_t len) {
     }
 
     /* Command to wipe eeprom */
-    else if (doc[F("action")] == F("settings_eeprom_wipe")) {
+    else if (doc[F("action")] == F("eeprom_wipe")) {
         res = settings_eeprom_wipe();
         if (res == 0) {
             Serial.println("{\"result\":\"success\"}");
@@ -309,8 +324,122 @@ int com_command_process(const char *const str, const size_t len) {
             return 0;
         }
 
-        /* Report success */
+        /* Send success */
         Serial.println(F("{\"result\":\"success\"}"));
+    }
+
+    /* Command to get target temperature */
+    else if (doc[F("action")] == F("controller_temperature_target_get")) {
+        float temperature_c = 0;
+        res = controller_temperature_target_get(temperature_c);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to get temperature!\"]}"));
+            return 0;
+        }
+
+        /* Build response */
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["temperature_c"] = temperature_c;
+
+        /* Send response */
+        serializeJson(response, Serial);
+        Serial.println();
+    }
+
+    /* Command to set target temperature */
+    else if (doc[F("action")] == F("controller_temperature_target_set")) {
+
+        /* Retrieve and validate temperature */
+        const float temperature_c = doc["temperature_c"] | 0.0f;
+        if (temperature_c < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Invalid temperature!\"]}"));
+            return 0;
+        }
+
+        /* Set target temperature */
+        res = controller_temperature_target_set(temperature_c);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set temperature!\"]}"));
+            return 0;
+        }
+
+        /* Send success */
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
+    /* Command to get measured temperature */
+    else if (doc[F("action")] == F("controller_temperature_measured_get")) {
+        float temperature_c = 0;
+        res = controller_temperature_measured_get(temperature_c);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to get temperature!\"]}"));
+            return 0;
+        }
+
+        /* Build response */
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["temperature_c"] = temperature_c;
+
+        /* Send response */
+        serializeJson(response, Serial);
+        Serial.println();
+    }
+
+    /* Command to lock the device */
+    else if (doc[F("action")] == F("controller_lock")) {
+        res = controller_lock(CONTROLLER_LOCK_REASON_REMOTE);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to lock device!\"]}"));
+            return 0;
+        }
+
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
+    /* Command to unlock the device */
+    else if (doc[F("action")] == F("controller_unlock")) {
+        res = controller_unlock(CONTROLLER_UNLOCK_REASON_REMOTE);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to unlock device!\"]}"));
+            return 0;
+        }
+
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
+    /* Command to retrieve the device status */
+    else if (doc[F("action")] == F("controller_status_get")) {
+
+        /* Retrieve temperature */
+        float temperature_target_c = 0;
+        res = controller_temperature_target_get(temperature_target_c);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to get target temperature!\"]}"));
+            return 0;
+        }
+        float temperature_measured_c = 0;
+        res = controller_temperature_measured_get(temperature_measured_c);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to get temperature!\"]}"));
+            return 0;
+        }
+
+        /* Build response */
+        StaticJsonDocument<1024> response;
+        response["result"] = "success";
+        response["status"]["state"] = controller_state_get();
+        response["status"]["temperature"]["target"] = temperature_target_c;
+        response["status"]["temperature"]["measured"] = temperature_measured_c;
+        // response["status"]["boost"] = controller_boost_activated_get();
+        // response["status"]["locked"] = controller_locked_get();
+        // response["status"]["connected"] = element_connected_get();
+        // response["status"]["temperature"] = element_temperature_get();
+        // response["status"]["power"] = element_power_get();
+        // response["status"]["error"] = element_error_get();
+        serializeJson(response, Serial);
+        Serial.println();
     }
 
     /* Command to retrieve the accelerometer idle time */
@@ -360,52 +489,62 @@ int com_command_process(const char *const str, const size_t len) {
 }
 
 /**
- * Hardware version get
- * Firmware version get
- * Settings get all
- * Settings set
- * controller_heating_turn_on
- * controller.lock -> controller_lock(COM);
- * controller.unlock -> controller_unlock(COM);
+ * @brief Process incoming serial commands
+ *
+ * Reads incoming serial data byte-by-byte, accumulates JSON commands until a newline
+ * is received, then processes the complete command. Handles edge cases such as:
+ * - Garbage data when serial port is first opened (skips until '{' is found)
+ * - Empty lines (ignored)
+ * - Buffer overflow (sends error response and resets)
+ *
+ * Commands must be JSON objects starting with '{' and terminated by '\r' or '\n'.
+ *
+ * @return 0 on success (always returns 0, errors are logged but don't affect return value)
  */
 int com_task(void) {
     int res;
 
-    /* Process incoming commands */
-    static char cmd_bytes[CONFIG_COMMAND_LENGTH_LIMIT];
-    static size_t cmd_index = 0;
-    while (Serial.available() > 0) {
-        char rx = Serial.read();
+    /* Command buffer for accumulating incoming bytes */
+    static char buffer[CONFIG_COMMAND_LENGTH_LIMIT];
+    static size_t buffer_index = 0;
 
-        /* Skip any garbage data that might be sent accidentaly when the port is opened */
-        if (cmd_index == 0 && rx != '{') {
+    /* Process all available bytes from serial port */
+    while (Serial.available() > 0) {
+        char received_byte = Serial.read();
+
+        /* Skip garbage data that may be sent when serial port is first opened.
+         * Valid JSON commands always start with '{', so we wait for it before
+         * starting to accumulate bytes. */
+        if (buffer_index == 0 && received_byte != '{') {
             continue;
         }
 
-        /* Wait for a new line */
-        else if (rx == '\r' || rx == '\n') {
+        /* Command is complete when we receive a newline character */
+        else if (received_byte == '\r' || received_byte == '\n') {
 
-            /* Skip empty lines */
-            if (cmd_index <= 0) {
+            /* Ignore empty lines (no data accumulated) */
+            if (buffer_index <= 0) {
                 continue;
             }
 
-            /* Process command */
-            res = com_command_process(cmd_bytes, cmd_index);
+            /* Process the complete command */
+            res = m_command_process(buffer, buffer_index);
             if (res < 0) {
                 log_w("Failed to process command!");
             }
 
-            /* Reset index */
-            cmd_index = 0;
+            /* Reset buffer for next command */
+            buffer_index = 0;
         }
 
-        /* Append received byte */
+        /* Accumulate received byte into command buffer */
         else {
-            cmd_bytes[cmd_index++] = rx;
-            if (cmd_index >= CONFIG_COMMAND_LENGTH_LIMIT) {
+            buffer[buffer_index++] = received_byte;
+
+            /* Handle buffer overflow: send error and reset */
+            if (buffer_index >= CONFIG_COMMAND_LENGTH_LIMIT) {
                 Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Command too long!\"]}"));
-                cmd_index = 0;
+                buffer_index = 0;
             }
         }
     }

@@ -13,9 +13,6 @@
 #define CONFIG_BUTTONS_INDIVIDUAL_PRESS_LONG_REPEAT_DURATION 250  //!<
 #define CONFIG_BUTTONS_COMBINED_PRESS_LONG_REPEAT_DURATION 500    //!<
 
-/* Orders config */
-#define CONFIG_COMMAND_LENGTH_LIMIT 256  //!<
-
 /* Tip config */
 #define CONFIG_TIP_CYCLE_TIME_LIMIT 1000  //!< Maximum amount of time that a measuring plus heating cycle should take (in milliseconds).
 #define CONFIG_TIP_COEFFICIENT_C 466      //!< Specific heatt capacity of the heating element (in J / (kg * K)).

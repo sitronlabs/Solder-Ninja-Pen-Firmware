@@ -504,14 +504,14 @@ int interface_task(void) {
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT:
                 case BUTTONS_EVENT_LEFT_LONG: {
-                    controller_target_decrease();
+                    controller_temperature_target_decrease();
                     m_timestamp = millis();
                     m_sm = STATE_MONITOR_ADJUST;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
-                    controller_target_increase();
+                    controller_temperature_target_increase();
                     m_timestamp = millis();
                     m_sm = STATE_MONITOR_ADJUST;
                     break;
@@ -630,15 +630,17 @@ int interface_task(void) {
             settings_interface_units_get(fahrenheit);
 
             /* Display monitor page */
+            float temperature_c = 0;
+            controller_temperature_target_get(temperature_c);
             m_library.clear();
             m_library.drawBitmap(0, 0, k_icon_thermometer.data, k_icon_thermometer.width, k_icon_thermometer.height, 1);
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (fahrenheit) {
-                m_library.printf("%03.0f", controller_target_get() * 1.8 + 32);
+                m_library.printf("%03.0f", temperature_c * 1.8 + 32);
                 m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_f.data, k_icon_degrees_f.width, k_icon_degrees_f.height, 1);
             } else {
-                m_library.printf("%03.0f", controller_target_get());
+                m_library.printf("%03.0f", temperature_c);
                 m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_c.data, k_icon_degrees_c.width, k_icon_degrees_c.height, 1);
             }
             m_library.display();
@@ -647,13 +649,13 @@ int interface_task(void) {
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT:
                 case BUTTONS_EVENT_LEFT_LONG: {
-                    controller_target_decrease();
+                    controller_temperature_target_decrease();
                     m_timestamp = millis();
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
-                    controller_target_increase();
+                    controller_temperature_target_increase();
                     m_timestamp = millis();
                     break;
                 }
