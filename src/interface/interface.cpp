@@ -4,7 +4,7 @@
 /* Project headers */
 #include "../gen/icons.h"
 #include "../gen/version.h"
-#include "app/app.h"
+#include "controller/controller.h"
 #include "element/element.h"
 #include "interface/accelerometer.h"
 #include "interface/buttons.h"
@@ -154,7 +154,7 @@ int interface_task(void) {
 
             /* Wait for magnet to be detected */
             if (magnet_detected_get() == true) {
-                app_sleep(APP_SLEEP_REASON_MAGNET);
+                controller_sleep(CONTROLLER_SLEEP_REASON_MAGNET);
                 m_magnet_sm = STATE_MAGNET_1_DETECTED;
             }
             break;
@@ -164,7 +164,7 @@ int interface_task(void) {
 
             /* Wait for magnet to not be detected */
             if (magnet_detected_get() == false) {
-                app_wake(APP_WAKE_REASON_MAGNET);
+                controller_wake(CONTROLLER_WAKE_REASON_MAGNET);
                 m_magnet_sm = STATE_MAGNET_0_NOT_DETECTED;
             }
             break;
@@ -174,15 +174,15 @@ int interface_task(void) {
     /* Handle accelerometer */
     if (accelerometer_wake_detected_get() > 0) {
         accelerometer_wake_reset();
-        app_wake(APP_WAKE_REASON_MOTION);
+        controller_wake(CONTROLLER_WAKE_REASON_MOTION);
     }
     if (accelerometer_idle_detected_get() > 0) {
         accelerometer_idle_reset();
-        app_sleep(APP_SLEEP_REASON_MOTION);
+        controller_sleep(CONTROLLER_SLEEP_REASON_MOTION);
     }
     if (accelerometer_fall_detected_get() > 0) {
         accelerometer_fall_reset();
-        app_lock(APP_LOCK_REASON_FREFALL);
+        controller_lock(CONTROLLER_LOCK_REASON_FREFALL);
     }
 
     /* Handle user interface */
@@ -338,17 +338,17 @@ int interface_task(void) {
 
         case STATE_MONITOR_REDIRECT: {
 
-            /* Move on according to app state */
-            switch (app_state_get()) {
-                case APP_STATE_LOCKED: {
+            /* Move on according to controller state */
+            switch (controller_state_get()) {
+                case CONTROLLER_STATE_LOCKED: {
                     m_sm = STATE_MONITOR_LOCKED;
                     break;
                 }
-                case APP_STATE_ACTIVE: {
+                case CONTROLLER_STATE_ACTIVE: {
                     m_sm = STATE_MONITOR_HEATING;
                     break;
                 }
-                case APP_STATE_ASLEEP: {
+                case CONTROLLER_STATE_ASLEEP: {
                     m_sm = STATE_MONITOR_ASLEEP;
                     break;
                 }
@@ -362,8 +362,8 @@ int interface_task(void) {
 
         case STATE_MONITOR_LOCKED: {
 
-            /* Ensure app state is still coherent */
-            if (app_state_get() != APP_STATE_LOCKED) {
+            /* Ensure controller state is still coherent */
+            if (controller_state_get() != CONTROLLER_STATE_LOCKED) {
                 m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
@@ -415,12 +415,12 @@ int interface_task(void) {
              * A long press on both buttons will trigger a lock and open the menu */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_unlock(APP_UNLOCK_REASON_BUTTONS);
+                    controller_unlock(CONTROLLER_UNLOCK_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock(APP_LOCK_REASON_BUTTONS);
+                    controller_lock(CONTROLLER_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
@@ -435,8 +435,8 @@ int interface_task(void) {
 
         case STATE_MONITOR_HEATING: {
 
-            /* Ensure app state is still coherent */
-            if (app_state_get() != APP_STATE_ACTIVE) {
+            /* Ensure controller state is still coherent */
+            if (controller_state_get() != CONTROLLER_STATE_ACTIVE) {
                 m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
@@ -447,7 +447,7 @@ int interface_task(void) {
 
             /* Display monitor page */
             m_library.clear();
-            if (app_boost_activated_get()) {
+            if (controller_boost_activated_get()) {
                 static uint32_t m_boost_warning_timestamp;
                 if ((millis() - m_boost_warning_timestamp) >= 1000) {
                     m_boost_warning_timestamp = millis();
@@ -502,25 +502,25 @@ int interface_task(void) {
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT:
                 case BUTTONS_EVENT_LEFT_LONG: {
-                    app_target_decrease();
+                    controller_target_decrease();
                     m_timestamp = millis();
                     m_sm = STATE_MONITOR_ADJUST;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
-                    app_target_increase();
+                    controller_target_increase();
                     m_timestamp = millis();
                     m_sm = STATE_MONITOR_ADJUST;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_lock(APP_LOCK_REASON_BUTTONS);
+                    controller_lock(CONTROLLER_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock(APP_LOCK_REASON_BUTTONS);
+                    controller_lock(CONTROLLER_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
@@ -535,8 +535,8 @@ int interface_task(void) {
 
         case STATE_MONITOR_ASLEEP: {
 
-            /* Ensure app state is still coherent */
-            if (app_state_get() != APP_STATE_ASLEEP) {
+            /* Ensure controller state is still coherent */
+            if (controller_state_get() != CONTROLLER_STATE_ASLEEP) {
                 m_sm = STATE_MONITOR_REDIRECT;
                 break;
             }
@@ -592,17 +592,17 @@ int interface_task(void) {
                 case BUTTONS_EVENT_LEFT_LONG:
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
-                    app_wake(APP_WAKE_REASON_BUTTONS);
+                    controller_wake(CONTROLLER_WAKE_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    app_lock(APP_LOCK_REASON_BUTTONS);
+                    controller_lock(CONTROLLER_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MONITOR_REDIRECT;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
-                    app_lock(APP_LOCK_REASON_BUTTONS);
+                    controller_lock(CONTROLLER_LOCK_REASON_BUTTONS);
                     m_sm = STATE_MENU_HOME;
                     break;
                 }
@@ -633,10 +633,10 @@ int interface_task(void) {
             m_library.setTextSize(2);
             m_library.setCursor(17, 1);
             if (fahrenheit) {
-                m_library.printf("%03.0f", app_target_get() * 1.8 + 32);
+                m_library.printf("%03.0f", controller_target_get() * 1.8 + 32);
                 m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_f.data, k_icon_degrees_f.width, k_icon_degrees_f.height, 1);
             } else {
-                m_library.printf("%03.0f", app_target_get());
+                m_library.printf("%03.0f", controller_target_get());
                 m_library.drawBitmap(17 + 12 + 12 + 12, 0, k_icon_degrees_c.data, k_icon_degrees_c.width, k_icon_degrees_c.height, 1);
             }
             m_library.display();
@@ -645,13 +645,13 @@ int interface_task(void) {
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT:
                 case BUTTONS_EVENT_LEFT_LONG: {
-                    app_target_decrease();
+                    controller_target_decrease();
                     m_timestamp = millis();
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT:
                 case BUTTONS_EVENT_RIGHT_LONG: {
-                    app_target_increase();
+                    controller_target_increase();
                     m_timestamp = millis();
                     break;
                 }

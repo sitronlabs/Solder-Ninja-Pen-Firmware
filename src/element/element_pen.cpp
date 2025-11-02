@@ -105,7 +105,7 @@ int element_temperature_measured_get(float &temperature_c) {
 int element_temperature_target_set(const float temperature_c) {
 
     /* Ensure temperature is within bounds */
-    if ((temperature_c <= CONFIG_APP_TARGET_MIN) || (temperature_c > CONFIG_APP_TARGET_MAX_BOOST)) {
+    if ((temperature_c <= CONFIG_CONTROLLER_TARGET_MIN) || (temperature_c > CONFIG_CONTROLLER_TARGET_MAX_BOOST)) {
         return -1;
     }
 

@@ -1,7 +1,7 @@
 /* Project */
 #include "../gen/version.h"
-#include "app/app.h"
 #include "com/com.h"
+#include "controller/controller.h"
 #include "interface/interface.h"
 #include "log/log.h"
 #include "settings/settings.h"
@@ -51,10 +51,10 @@ void setup(void) {
         log_e("Failed to setup settings!");
     }
 
-    /* Setup application */
-    res = app_setup();
+    /* Setup controller */
+    res = controller_setup();
     if (res < 0) {
-        log_e("Failed to setup application task!");
+        log_e("Failed to setup controller task!");
     }
 
     /* Setup user interface  */
@@ -99,8 +99,8 @@ void setup(void) {
  */
 void loop(void) {
 
-    /* Application task */
-    app_task();
+    /* Controller task */
+    controller_task();
 
     /* User interface task */
     interface_task();

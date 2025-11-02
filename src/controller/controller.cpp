@@ -1,5 +1,5 @@
 /* Self header */
-#include "app.h"
+#include "controller.h"
 
 /* Project */
 #include "element/element.h"
@@ -21,7 +21,7 @@ static uint32_t m_boost_timestamp;
 /**
  *
  */
-int app_setup(void) {
+int controller_setup(void) {
     int res;
 
     /* Setup power negotiator */
@@ -52,28 +52,28 @@ int app_setup(void) {
 /**
  *
  */
-enum app_state app_state_get(void) {
+enum controller_state controller_state_get(void) {
     if (m_lock) {
-        return APP_STATE_LOCKED;
+        return CONTROLLER_STATE_LOCKED;
     } else if (m_sleep_inactivity || m_sleep_stand) {
-        return APP_STATE_ASLEEP;
+        return CONTROLLER_STATE_ASLEEP;
     } else {
-        return APP_STATE_ACTIVE;
+        return CONTROLLER_STATE_ACTIVE;
     }
 }
 
 /**
  *
  */
-int app_sleep(enum app_sleep_reason reason) {
+int controller_sleep(enum controller_sleep_reason reason) {
 
     /* Disable heating */
     element_heating_disable();
 
     /* Update sleep flags */
-    if (reason == APP_SLEEP_REASON_MOTION) {
+    if (reason == CONTROLLER_SLEEP_REASON_MOTION) {
         m_sleep_inactivity = true;
-    } else if (reason == APP_SLEEP_REASON_MAGNET) {
+    } else if (reason == CONTROLLER_SLEEP_REASON_MAGNET) {
         m_sleep_stand = true;
     }
 
@@ -84,13 +84,13 @@ int app_sleep(enum app_sleep_reason reason) {
 /**
  *
  */
-int app_wake(enum app_wake_reason reason) {
+int controller_wake(enum controller_wake_reason reason) {
 
     /* Update sleep flags */
-    if (reason == APP_WAKE_REASON_MOTION ||
-        reason == APP_WAKE_REASON_BUTTONS) {
+    if (reason == CONTROLLER_WAKE_REASON_MOTION ||
+        reason == CONTROLLER_WAKE_REASON_BUTTONS) {
         m_sleep_inactivity = false;
-    } else if (reason == APP_WAKE_REASON_MAGNET) {
+    } else if (reason == CONTROLLER_WAKE_REASON_MAGNET) {
         m_sleep_stand = false;
     }
 
@@ -98,7 +98,7 @@ int app_wake(enum app_wake_reason reason) {
      * @todo Prevent transitionning to heating if not enough power?
      * @todo Check power available by asking power_xxx()
      * @todo If not enough power, return specific error code */
-    if (app_state_get() == APP_STATE_ACTIVE) {
+    if (controller_state_get() == CONTROLLER_STATE_ACTIVE) {
         element_temperature_target_set(m_target);
         element_heating_enable();
     }
@@ -110,7 +110,7 @@ int app_wake(enum app_wake_reason reason) {
 /**
  *
  */
-int app_lock(enum app_lock_reason reason) {
+int controller_lock(enum controller_lock_reason reason) {
 
     /* Disable heating */
     element_heating_disable();
@@ -125,7 +125,7 @@ int app_lock(enum app_lock_reason reason) {
 /**
  *
  */
-int app_unlock(enum app_unlock_reason reason) {
+int controller_unlock(enum controller_unlock_reason reason) {
 
     /* Update lock flags */
     m_lock = false;
@@ -134,7 +134,7 @@ int app_unlock(enum app_unlock_reason reason) {
      * @todo Prevent transitionning to heating if not enough power?
      * @todo Check power available by asking power_xxx()
      * @todo If not enough power, return specific error code */
-    if (app_state_get() == APP_STATE_ACTIVE) {
+    if (controller_state_get() == CONTROLLER_STATE_ACTIVE) {
         element_temperature_target_set(m_target);
         element_heating_enable();
     }
@@ -146,7 +146,7 @@ int app_unlock(enum app_unlock_reason reason) {
 /**
  *
  */
-float app_target_get(void) {
+float controller_target_get(void) {
     return m_target;
 }
 
@@ -155,16 +155,16 @@ float app_target_get(void) {
  * @param
  * @return
  */
-int app_target_increase(void) {
+int controller_target_increase(void) {
 
     /* Compute new target */
     m_target += 10;
-    if (m_target > CONFIG_APP_TARGET_MAX_BOOST) {
-        m_target = CONFIG_APP_TARGET_MAX_BOOST;
+    if (m_target > CONFIG_CONTROLLER_TARGET_MAX_BOOST) {
+        m_target = CONFIG_CONTROLLER_TARGET_MAX_BOOST;
     }
 
     /* If over the safe limit, save the timestamp to revert to the safe limit after a while */
-    if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
+    if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
         m_boost_activated = true;
         m_boost_timestamp = millis();
     }
@@ -184,16 +184,16 @@ int app_target_increase(void) {
  * @param
  * @return
  */
-int app_target_decrease(void) {
+int controller_target_decrease(void) {
 
     /* Compute new target */
     m_target -= 10;
-    if (m_target < CONFIG_APP_TARGET_MIN) {
-        m_target = CONFIG_APP_TARGET_MIN;
+    if (m_target < CONFIG_CONTROLLER_TARGET_MIN) {
+        m_target = CONFIG_CONTROLLER_TARGET_MIN;
     }
 
     /* If over the safe limit, save the timestamp to revert to the safe limit after a while */
-    if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
+    if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
         m_boost_activated = true;
         m_boost_timestamp = millis();
     } else {
@@ -215,7 +215,7 @@ int app_target_decrease(void) {
  * @param
  * @return
  */
-bool app_boost_activated_get(void) {
+bool controller_boost_activated_get(void) {
     return m_boost_activated;
 }
 
@@ -224,7 +224,7 @@ bool app_boost_activated_get(void) {
  * @param
  * @return
  */
-int app_task(void) {
+int controller_task(void) {
 
     /* Power negotiatior task */
     power_task();
@@ -239,9 +239,9 @@ int app_task(void) {
     }
 
     /* Disable boost after a while */
-    if ((m_boost_activated == true) && (millis() - m_boost_timestamp >= CONFIG_APP_BOOST_DURATION_LIMIT)) {
-        if (m_target > CONFIG_APP_TARGET_MAX_SAFE) {
-            m_target = CONFIG_APP_TARGET_MAX_SAFE;
+    if ((m_boost_activated == true) && (millis() - m_boost_timestamp >= CONFIG_CONTROLLER_BOOST_DURATION_LIMIT)) {
+        if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
+            m_target = CONFIG_CONTROLLER_TARGET_MAX_SAFE;
             element_temperature_target_set(m_target);
         }
         m_boost_activated = false;
@@ -250,3 +250,4 @@ int app_task(void) {
     /* Return success */
     return 0;
 }
+

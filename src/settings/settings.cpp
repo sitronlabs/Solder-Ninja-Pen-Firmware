@@ -1053,7 +1053,7 @@ int settings_temperature_target_get(float &temperature_c) {
         return 0;
     }
     float t = m_doc["preferences"]["heating"]["temperature_c"];
-    if (t < CONFIG_APP_TARGET_MIN || t > CONFIG_APP_TARGET_MAX_SAFE) {
+    if (t < CONFIG_CONTROLLER_TARGET_MIN || t > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
         return 0;
     }
     temperature_c = t;

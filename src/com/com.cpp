@@ -4,7 +4,7 @@
 /* Project */
 #include "../cfg/config.h"
 #include "../gen/version.h"
-#include "app/app.h"
+#include "controller/controller.h"
 #include "log/log.h"
 #include "settings/settings.h"
 
@@ -326,9 +326,9 @@ int com_command_process(const char *const str, const size_t len) {
  * Firmware version get
  * Settings get all
  * Settings set
- * App_heating_turn_on
- * app.lock -> app_lock(COM);
- * app.unlock -> app_unlock(COM);
+ * controller_heating_turn_on
+ * controller.lock -> controller_lock(COM);
+ * controller.unlock -> controller_unlock(COM);
  */
 int com_task(void) {
     int res;

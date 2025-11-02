@@ -1,11 +1,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* App config */
-#define CONFIG_APP_TARGET_MIN 0                //!< Minimum target temperature (in degrees celsius).
-#define CONFIG_APP_TARGET_MAX_SAFE 350         //!< Maximum target temperature (in degrees celsius).
-#define CONFIG_APP_TARGET_MAX_BOOST 400        //!< Maximum target temperature in temporary boost (in degrees celsius).
-#define CONFIG_APP_BOOST_DURATION_LIMIT 30000  //!< Amount of time after which the boost will end (in milliseconds).
+/* Controller config */
+#define CONFIG_CONTROLLER_TARGET_MIN 0                //!< Minimum target temperature (in degrees celsius).
+#define CONFIG_CONTROLLER_TARGET_MAX_SAFE 350         //!< Maximum target temperature (in degrees celsius).
+#define CONFIG_CONTROLLER_TARGET_MAX_BOOST 400        //!< Maximum target temperature in temporary boost (in degrees celsius).
+#define CONFIG_CONTROLLER_BOOST_DURATION_LIMIT 30000  //!< Amount of time after which the boost will end (in milliseconds).
 
 /* Accelerometer config */
 #define CONFIG_ACCEL_IDLE_TIME 10000                    //!< Time after which no movement of the device will be interpreted as inactivity (in milliseconds).
