@@ -14,9 +14,10 @@
 static bool m_sleep_inactivity = false;
 static bool m_sleep_stand = false;
 static bool m_lock = false;
-static float m_target = 350;
-static bool m_boost_activated = false;
-static uint32_t m_boost_timestamp;
+static float m_target = CONFIG_CONTROLLER_TARGET_MAX_SAFE;
+static bool m_boost_requested = false; /* Boost mode requested (target > safe limit) but timer not yet started */
+static bool m_boost_activated = false; /* Boost mode active (timer running, will auto-disable after duration limit) */
+static uint32_t m_boost_timestamp;     /* Timestamp when boost timer was started */
 
 /**
  *
@@ -77,6 +78,11 @@ int controller_sleep(enum controller_sleep_reason reason) {
         m_sleep_stand = true;
     }
 
+    /* Disable boost and reset target to safe limit if needed */
+    m_boost_requested = false;
+    m_boost_activated = false;
+    m_target = (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) ? CONFIG_CONTROLLER_TARGET_MAX_SAFE : m_target;
+
     /* Return success */
     return 0;
 }
@@ -117,6 +123,11 @@ int controller_lock(enum controller_lock_reason reason) {
 
     /* Update lock flags */
     m_lock = true;
+
+    /* Disable boost and reset target to safe limit if needed */
+    m_boost_requested = false;
+    m_boost_activated = false;
+    m_target = (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) ? CONFIG_CONTROLLER_TARGET_MAX_SAFE : m_target;
 
     /* Return success */
     return 0;
@@ -159,18 +170,19 @@ int controller_target_increase(void) {
 
     /* Compute new target */
     m_target += 10;
+
+    /* Ensure target is within bounds */
     if (m_target > CONFIG_CONTROLLER_TARGET_MAX_BOOST) {
         m_target = CONFIG_CONTROLLER_TARGET_MAX_BOOST;
     }
 
-    /* If over the safe limit, save the timestamp to revert to the safe limit after a while */
+    /* If target exceeds safe limit, request boost mode (timer will start once measured temp exceeds safe limit) */
     if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
-        m_boost_activated = true;
-        m_boost_timestamp = millis();
+        m_boost_requested = true;
     }
 
     /* Save new target to settings */
-    settings_temperature_target_set(m_target);
+    settings_temperature_target_set(m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE ? CONFIG_CONTROLLER_TARGET_MAX_SAFE : m_target);
 
     /* Pass along */
     element_temperature_target_set(m_target);
@@ -188,20 +200,23 @@ int controller_target_decrease(void) {
 
     /* Compute new target */
     m_target -= 10;
+
+    /* Ensure target is within bounds */
     if (m_target < CONFIG_CONTROLLER_TARGET_MIN) {
         m_target = CONFIG_CONTROLLER_TARGET_MIN;
     }
 
-    /* If over the safe limit, save the timestamp to revert to the safe limit after a while */
+    /* If target exceeds safe limit, request boost mode (timer will start once measured temp exceeds safe limit) */
+    /* Otherwise, cancel any pending or active boost */
     if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
-        m_boost_activated = true;
-        m_boost_timestamp = millis();
+        m_boost_requested = true;
     } else {
+        m_boost_requested = false;
         m_boost_activated = false;
     }
 
     /* Save new target to settings */
-    settings_temperature_target_set(m_target);
+    settings_temperature_target_set(m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE ? CONFIG_CONTROLLER_TARGET_MAX_SAFE : m_target);
 
     /* Pass along */
     element_temperature_target_set(m_target);
@@ -211,12 +226,11 @@ int controller_target_decrease(void) {
 }
 
 /**
- * @brief
- * @param
- * @return
+ * @brief Check if boost mode is requested or currently active
+ * @return true if boost is requested (waiting for temp to exceed safe limit) or active (timer running)
  */
 bool controller_boost_activated_get(void) {
-    return m_boost_activated;
+    return m_boost_requested || m_boost_activated;
 }
 
 /**
@@ -225,6 +239,7 @@ bool controller_boost_activated_get(void) {
  * @return
  */
 int controller_task(void) {
+    int res;
 
     /* Power negotiatior task */
     power_task();
@@ -238,7 +253,22 @@ int controller_task(void) {
         m_lock = true;
     }
 
-    /* Disable boost after a while */
+    /* Boost activation: Start timer only once measured temperature exceeds safe limit
+     * This ensures boost duration is counted from when the element actually reaches boost temperature,
+     * not from when the user requests it (which may take time to heat up) */
+    if ((m_boost_requested == true) && (m_boost_activated == false)) {
+        float measured_temp;
+        res = element_temperature_measured_get(measured_temp);
+        if (res == 0) {
+            if (measured_temp > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
+                m_boost_requested = false;
+                m_boost_activated = true;
+                m_boost_timestamp = millis();
+            }
+        }
+    }
+
+    /* Boost deactivation: After duration limit, automatically reduce target to safe limit and disable boost */
     if ((m_boost_activated == true) && (millis() - m_boost_timestamp >= CONFIG_CONTROLLER_BOOST_DURATION_LIMIT)) {
         if (m_target > CONFIG_CONTROLLER_TARGET_MAX_SAFE) {
             m_target = CONFIG_CONTROLLER_TARGET_MAX_SAFE;
@@ -250,4 +280,3 @@ int controller_task(void) {
     /* Return success */
     return 0;
 }
-
