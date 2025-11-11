@@ -1321,6 +1321,41 @@ int settings_display_brightness_set(const int percent) {
 }
 
 /**
+ * @brief Get accelerometer idle time setting
+ * @param[out] time_ms Idle time in milliseconds
+ * @return 1 if setting was found, 0 if not found (use default)
+ */
+int settings_accelerometer_idle_time_get(uint32_t &time_ms) {
+
+    /* Return if found */
+    if (m_doc["preferences"]["accelerometer"]["idle_time_ms"].is<uint32_t>() == true) {
+        time_ms = m_doc["preferences"]["accelerometer"]["idle_time_ms"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief Set accelerometer idle time setting
+ * @param[in] time_ms Idle time in milliseconds
+ * @return 0 on success, negative error code on failure
+ */
+int settings_accelerometer_idle_time_set(const uint32_t time_ms) {
+
+    /* Update json document */
+    m_doc["preferences"]["accelerometer"]["idle_time_ms"] = time_ms;
+
+    /* Mark settings as modified */
+    m_modified = true;
+    m_modified_timestamp = millis();
+
+    /* Return success */
+    return 0;
+}
+
+/**
  * @brief Background task for managing settings persistence
  *
  * This function should be called periodically from the main loop to handle

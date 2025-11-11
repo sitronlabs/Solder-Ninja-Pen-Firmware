@@ -5,6 +5,7 @@
 #include "../cfg/config.h"
 #include "../gen/version.h"
 #include "controller/controller.h"
+#include "interface/accelerometer.h"
 #include "log/log.h"
 #include "settings/settings.h"
 
@@ -305,6 +306,43 @@ int com_command_process(const char *const str, const size_t len) {
         res = settings_user_set(icon, line1, line2);
         if (res < 0) {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to save settings!\"]}"));
+            return 0;
+        }
+
+        /* Report success */
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
+    /* Command to retrieve the accelerometer idle time */
+    else if (doc[F("action")] == F("accelerometer_idle_time_get")) {
+
+        /* Retrieve accelerometer idle time */
+        uint32_t time_ms = accelerometer_idle_time_get();
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["time_ms"] = time_ms;
+        serializeJson(response, Serial);
+        Serial.println();
+    }
+
+    /* Command to set the accelerometer idle time */
+    else if (doc[F("action")] == F("accelerometer_idle_time_set")) {
+
+        /* Retrieve and verify argument */
+        uint32_t time_ms = doc["time_ms"] | 0;
+        if (time_ms < CONFIG_ACCEL_IDLE_TIME_MIN) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle time too short!\"]}"));
+            return 0;
+        }
+        if (time_ms > CONFIG_ACCEL_IDLE_TIME_MAX) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle time too long!\"]}"));
+            return 0;
+        }
+
+        /* Set new idle time */
+        res = accelerometer_idle_time_set(time_ms);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set idle time!\"]}"));
             return 0;
         }
 

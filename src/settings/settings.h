@@ -56,6 +56,8 @@ int settings_interface_rotation_get(bool &left_handed);
 int settings_interface_rotation_set(const bool left_handed);
 int settings_display_brightness_get(int &percent);
 int settings_display_brightness_set(const int percent);
+int settings_accelerometer_idle_time_get(uint32_t &time_ms);
+int settings_accelerometer_idle_time_set(const uint32_t time_ms);
 
 /* Task */
 int settings_task(void);

@@ -2,7 +2,7 @@
 #include "accelerometer.h"
 
 /* Project */
-#include "../cfg/config.h"
+#include "../settings/settings.h"
 #include "log/log.h"
 
 /* Arduino libraries */
@@ -11,10 +11,12 @@
 
 /* Peripherals */
 static lis2dh12 m_accel;
+static bool m_accel_reconfigure_needed;
 
 /* Variables for idle detection */
 static volatile bool m_idle_detected;
 static volatile bool m_wake_detected;
+static uint32_t m_idle_time_ms;
 
 /* Variables for freefall detection */
 static volatile bool m_fall_detected;
@@ -44,6 +46,51 @@ int accelerometer_setup(void) {
     attachInterrupt(digitalPinToInterrupt(12), []() { m_fall_detected = true; }, FALLING);
     attachInterrupt(digitalPinToInterrupt(13), []() { if (digitalRead(13) == LOW) { m_idle_detected = true; } else { m_wake_detected = true; } }, CHANGE);
 #endif
+
+    /* Retrieve idle time from settings and fallback to default if not found */
+    res = settings_accelerometer_idle_time_get(m_idle_time_ms);
+    if (res == 0) {
+        m_idle_time_ms = CONFIG_ACCEL_IDLE_TIME_DEFAULT;
+    }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Get the current accelerometer idle time setting
+ * @return Current idle time in milliseconds (time after which no movement is interpreted as inactivity)
+ */
+uint32_t accelerometer_idle_time_get(void) {
+    return m_idle_time_ms;
+}
+
+/**
+ * @brief Set the accelerometer idle time and trigger reconfiguration
+ *
+ * This function updates the idle time value, flags the accelerometer for reconfiguration
+ * (which will happen on the next accelerometer_task() call), and persists the new value
+ * to settings storage.
+ *
+ * @param[in] time_ms Idle time in milliseconds (time after which no movement is interpreted as inactivity)
+ * @return 0 on success
+ */
+int accelerometer_idle_time_set(const uint32_t time_ms) {
+
+    /* Ensure valid idle time */
+    if ((time_ms < CONFIG_ACCEL_IDLE_TIME_MIN) || (time_ms > CONFIG_ACCEL_IDLE_TIME_MAX)) {
+        log_e("Invalid idle time!");
+        return -EINVAL;
+    }
+
+    /* Update the cached idle time value */
+    m_idle_time_ms = time_ms;
+
+    /* Flag accelerometer for reconfiguration (will be handled by accelerometer_task()) */
+    m_accel_reconfigure_needed = true;
+
+    /* Persist the new value to settings storage */
+    settings_accelerometer_idle_time_set(m_idle_time_ms);
 
     /* Return success */
     return 0;
@@ -131,7 +178,7 @@ int accelerometer_task(void) {
             }
 
             /* Prepare the registers */
-            float reg_act_dur = (((CONFIG_ACCEL_IDLE_TIME / 1000.0) * 50.0) / 8) - 1;
+            float reg_act_dur = (((m_idle_time_ms / 1000.0) * 50.0) / 8) - 1;
             if (reg_act_dur > 255) {
                 reg_act_dur = 255;
             }
@@ -181,7 +228,14 @@ int accelerometer_task(void) {
 
         case STATE_1: {
 
-            /* Do nothing */
+            /* Reconfigure the accelerometer if needed */
+            if (m_accel_reconfigure_needed == true) {
+                m_accel_reconfigure_needed = false;
+                m_sm = STATE_0;
+                break;
+            }
+
+            /* Otherwise, do nothing */
             break;
         }
 
