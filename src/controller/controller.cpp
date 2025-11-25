@@ -7,17 +7,16 @@
 #include "power/power.h"
 #include "settings/settings.h"
 
-/* Config */
-#include "../cfg/config.h"
-
 /* Local variables */
-static bool m_sleep_inactivity = false;
-static bool m_sleep_stand = false;
-static bool m_lock = false;
+static bool m_sleep_inactivity;
+static bool m_sleep_inactivity_override;
+static uint32_t m_sleep_inactivity_override_start;
+static bool m_sleep_stand;
+static bool m_lock;
 static float m_target = CONFIG_CONTROLLER_TARGET_MAX_SAFE;
-static bool m_boost_requested = false; /* Boost mode requested (target > safe limit) but timer not yet started */
-static bool m_boost_activated = false; /* Boost mode active (timer running, will auto-disable after duration limit) */
-static uint32_t m_boost_timestamp;     /* Timestamp when boost timer was started */
+static bool m_boost_requested;     /* Boost mode requested (target > safe limit) but timer not yet started */
+static bool m_boost_activated;     /* Boost mode active (timer running, will auto-disable after duration limit) */
+static uint32_t m_boost_timestamp; /* Timestamp when boost timer was started */
 
 /**
  *
@@ -56,7 +55,7 @@ int controller_setup(void) {
 enum controller_state controller_state_get(void) {
     if (m_lock) {
         return CONTROLLER_STATE_LOCKED;
-    } else if (m_sleep_inactivity || m_sleep_stand) {
+    } else if ((m_sleep_inactivity && !m_sleep_inactivity_override) || (m_sleep_stand)) {
         return CONTROLLER_STATE_ASLEEP;
     } else {
         return CONTROLLER_STATE_ACTIVE;
@@ -74,6 +73,7 @@ int controller_sleep(enum controller_sleep_reason reason) {
     /* Update sleep flags */
     if (reason == CONTROLLER_SLEEP_REASON_MOTION) {
         m_sleep_inactivity = true;
+        m_sleep_inactivity_override = false;
     } else if (reason == CONTROLLER_SLEEP_REASON_MAGNET) {
         m_sleep_stand = true;
     }
@@ -124,6 +124,9 @@ int controller_lock(enum controller_lock_reason reason) {
     /* Update lock flags */
     m_lock = true;
 
+    /* Clear sleep inactivity override */
+    m_sleep_inactivity_override = false;
+
     /* Disable boost and reset target to safe limit if needed */
     m_boost_requested = false;
     m_boost_activated = false;
@@ -140,6 +143,12 @@ int controller_unlock(enum controller_unlock_reason reason) {
 
     /* Update lock flags */
     m_lock = false;
+
+    /* Override sleep inactivity if appropriate */
+    if (reason == CONTROLLER_UNLOCK_REASON_REMOTE) {
+        m_sleep_inactivity_override = true;
+        m_sleep_inactivity_override_start = millis();
+    }
 
     /* Enable heating
      * @todo Prevent transitionning to heating if not enough power?
@@ -302,6 +311,18 @@ int controller_task(void) {
     if (element_connected_get() == false) {
         element_heating_disable();
         m_lock = true;
+    }
+
+    /* Clear sleep inactivity override after a while */
+    if (m_sleep_inactivity_override) {
+        uint32_t idle_time_ms = CONFIG_ACCEL_IDLE_TIME_DEFAULT;
+        settings_accelerometer_idle_time_get(idle_time_ms);
+        if ((millis() - m_sleep_inactivity_override_start) >= idle_time_ms) {
+            m_sleep_inactivity_override = false;
+            if (controller_state_get() != CONTROLLER_STATE_ACTIVE) {
+                element_heating_disable();
+            }
+        }
     }
 
     /* Boost activation: Start timer only once measured temperature exceeds safe limit

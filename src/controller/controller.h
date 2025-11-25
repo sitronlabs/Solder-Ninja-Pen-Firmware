@@ -1,6 +1,12 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
 
+/* Config */
+#include "../cfg/config.h"
+
+/* Project headers */
+#include "../interface/accelerometer.h"
+
 /* Setup */
 int controller_setup(void);
 
