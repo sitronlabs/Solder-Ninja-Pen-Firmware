@@ -43,6 +43,9 @@ int settings_eeprom_read(const size_t address, uint8_t *const data, const size_t
 int settings_eeprom_write(const size_t address, const uint8_t *const data, const size_t length);
 int settings_eeprom_wipe(void);
 
+/* Direct flash access */
+int settings_flash_wipe(void);
+
 /* Settings getters and setters */
 int settings_temperature_target_get(float &temperature_c);
 int settings_temperature_target_set(const float temperature_c);
@@ -64,6 +67,9 @@ int settings_diagnostics_heating_time_get(uint32_t &seconds);
 int settings_diagnostics_heating_time_increment(const uint32_t seconds);
 int settings_diagnostics_usb_voltage_max_get(float &voltage);
 int settings_diagnotics_usb_voltage_max_report(const float voltage);
+
+/* Clear all settings */
+int settings_wipe(void);
 
 /* Task */
 int settings_task(void);

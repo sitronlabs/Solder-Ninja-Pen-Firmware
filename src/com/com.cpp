@@ -205,9 +205,37 @@ static int m_command_process(const char *const str, const size_t len) {
         Serial.printf("{\"result\": \"%s\"}\r\n", failure ? "failure" : "success");
     }
 
-    /* Command to wipe eeprom */
+    /* Command to wipe EEPROM
+     * Writes 0xFF to every byte, which may take significant time.
+     * EEPROM contents will be automatically rebuilt from settings.json in flash if available, so this command is not really useful alone. */
     else if (doc[F("action")] == F("eeprom_wipe")) {
         res = settings_eeprom_wipe();
+        if (res == 0) {
+            Serial.println("{\"result\":\"success\"}");
+        } else {
+            Serial.println("{\"result\":\"failure\", \"errors\" : [\"Unknown error!\"]}");
+        }
+    }
+
+    /* Command to wipe flash
+     * Deletes all files from flash storage.
+     * The settings.json file will be automatically rebuilt from EEPROM contents if available. */
+    else if (doc[F("action")] == F("flash_wipe")) {
+        res = settings_flash_wipe();
+        if (res == 0) {
+            Serial.println("{\"result\":\"success\"}");
+        } else if (res == -EBUSY) {
+            Serial.println("{\"result\":\"failure\", \"errors\" : [\"Flash is currently in use!\"]}");
+        } else {
+            Serial.println("{\"result\":\"failure\", \"errors\" : [\"Unknown error!\"]}");
+        }
+    }
+
+    /* Command to wipe all settings
+     * Permanently deletes all settings from both EEPROM and flash, including
+     * critical information such as product information. Use with caution. */
+    else if (doc[F("action")] == F("settings_wipe")) {
+        res = settings_wipe();
         if (res == 0) {
             Serial.println("{\"result\":\"success\"}");
         } else {

@@ -183,7 +183,7 @@ Writes data to the EEPROM at a specified address.
 
 ### 5. `eeprom_wipe`
 
-Wipes (erases) the entire EEPROM.
+Wipes (erases) the entire EEPROM by writing 0xFF to every byte.
 
 **C Function:** `int settings_eeprom_wipe(void)`
 
@@ -207,9 +207,80 @@ Wipes (erases) the entire EEPROM.
 }
 ```
 
+**Notes:**
+- This operation may take significant time as it writes to every byte of the EEPROM
+- EEPROM contents will be automatically rebuilt from `settings.json` in flash if available, so this command is rarely needed alone
+
 ---
 
-### 6. `product_information_get`
+### 6. `flash_wipe`
+
+Wipes (deletes) all files from flash storage.
+
+**C Function:** `int settings_flash_wipe(void)`
+
+**Request:**
+```json
+{"action": "flash_wipe"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Flash is currently in use!", "Unknown error!"]
+}
+```
+
+**Notes:**
+- Deletes all files from flash storage, including the `settings.json` file
+- The `settings.json` file will be automatically rebuilt from EEPROM contents if available
+- Will fail with "Flash is currently in use!" error if flash is busy
+
+---
+
+### 7. `settings_wipe`
+
+Permanently deletes all settings from both EEPROM and flash storage.
+
+**C Function:** `int settings_wipe(void)`
+
+**Request:**
+```json
+{"action": "settings_wipe"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Unknown error!"]
+}
+```
+
+**Notes:**
+- **Warning:** This command permanently deletes all settings from both EEPROM and flash
+- Includes critical information such as product information (product number, revision, serial number)
+- Use with caution as this operation cannot be undone
+- Settings will not be automatically restored after this operation
+
+---
+
+### 8. `product_information_get`
 
 Retrieves the product information (product number, revision, and serial number).
 
@@ -243,7 +314,7 @@ Retrieves the product information (product number, revision, and serial number).
 
 ---
 
-### 7. `product_information_set`
+### 9. `product_information_set`
 
 Sets the product information (product number, revision, and serial number).
 
@@ -284,7 +355,7 @@ Sets the product information (product number, revision, and serial number).
 
 ---
 
-### 8. `user_information_get`
+### 10. `user_information_get`
 
 Retrieves the user information (icon data and name).
 
@@ -321,7 +392,7 @@ Retrieves the user information (icon data and name).
 
 ---
 
-### 9. `user_information_set`
+### 11. `user_information_set`
 
 Sets the user information (icon data and name).
 
@@ -362,7 +433,7 @@ Sets the user information (icon data and name).
 
 ---
 
-### 10. `controller_status_get`
+### 12. `controller_status_get`
 
 Retrieves the current device status (state, target temperature, measured temperature).
 
@@ -403,7 +474,7 @@ Retrieves the current device status (state, target temperature, measured tempera
 
 ---
 
-### 11. `controller_temperature_target_get`
+### 13. `controller_temperature_target_get`
 
 Retrieves the target temperature setting (persisted in EEPROM).
 
@@ -432,7 +503,7 @@ Retrieves the target temperature setting (persisted in EEPROM).
 
 ---
 
-### 12. `controller_temperature_target_set`
+### 14. `controller_temperature_target_set`
 
 Sets the target temperature (persisted in EEPROM).
 
@@ -466,7 +537,7 @@ Sets the target temperature (persisted in EEPROM).
 
 ---
 
-### 13. `controller_temperature_measured_get`
+### 15. `controller_temperature_measured_get`
 
 Retrieves the current measured temperature from the heating element.
 
@@ -498,7 +569,7 @@ Retrieves the current measured temperature from the heating element.
 
 ---
 
-### 14. `controller_lock`
+### 16. `controller_lock`
 
 Locks the device (disables heating for safety).
 
@@ -532,7 +603,7 @@ Locks the device (disables heating for safety).
 
 ---
 
-### 15. `controller_unlock`
+### 17. `controller_unlock`
 
 Unlocks the device (allows heating if in active state).
 
@@ -566,7 +637,7 @@ Unlocks the device (allows heating if in active state).
 
 ---
 
-### 16. `accelerometer_idle_time_get`
+### 18. `accelerometer_idle_time_get`
 
 Retrieves the current accelerometer idle time setting (time after which no movement is interpreted as inactivity).
 
@@ -594,7 +665,7 @@ Retrieves the current accelerometer idle time setting (time after which no movem
 
 ---
 
-### 17. `accelerometer_idle_time_set`
+### 19. `accelerometer_idle_time_set`
 
 Sets the accelerometer idle time (time after which no movement is interpreted as inactivity).
 
@@ -633,7 +704,7 @@ Sets the accelerometer idle time (time after which no movement is interpreted as
 
 ---
 
-### 18. `heating_time_get`
+### 20. `heating_time_get`
 
 Retrieves the total heating time (diagnostics data).
 
@@ -671,7 +742,7 @@ Retrieves the total heating time (diagnostics data).
 
 ---
 
-### 19. `usb_voltage_max_get`
+### 21. `usb_voltage_max_get`
 
 Retrieves the maximum USB voltage recorded (diagnostics data).
 

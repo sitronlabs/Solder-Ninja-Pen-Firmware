@@ -1042,6 +1042,74 @@ int settings_eeprom_wipe(void) {
 }
 
 /**
+ * @brief Completely wipe all contents of the FatFS flash filesystem
+ *
+ * This function performs a complete wipe of the flash filesystem by formatting it.
+ *
+ * @return 0 on successful completion, negative error code on failure
+ * @retval -EBUSY Flash is currently in use by another operation
+ * @retval -EIO Flash operation failed
+ */
+int settings_flash_wipe(void) {
+
+    /* Skip if flash is not available */
+    if (m_flash_available != true) {
+        log_w("Flash not available for wiping!");
+        return -EIO;
+    }
+
+    /* Ensure flash is not in use */
+    if (m_flash_accessor != FLASH_ACCESSOR_NONE) {
+        log_e("Flash is already in use!");
+        return -EBUSY;
+    }
+
+    /* Gain exclusive access to flash */
+    m_flash_accessor = FLASH_ACCESSOR_LOCAL;
+
+    /* Log */
+    log_i("Wiping flash filesystem...");
+
+    /* Try to format the filesystem to wipe all contents */
+    if (FatFS.format() != true) {
+        /* If format() failed, fall back to removing all files */
+        log_w("Format failed, attempting to remove all files...");
+
+        /* Open root directory and remove all files */
+        Dir root = FatFS.openDir("/");
+        root.rewind();
+        while (root.next()) {
+            String fileName = root.fileName();
+            if (root.isFile()) {
+                if (!FatFS.remove(fileName.c_str())) {
+                    log_w("Failed to remove file: %s", fileName.c_str());
+                } else {
+                    log_i("Removed file: %s", fileName.c_str());
+                }
+            } else if (root.isDirectory()) {
+                /* Remove directory and its contents */
+                if (!FatFS.rmdir(fileName.c_str())) {
+                    log_w("Failed to remove directory: %s", fileName.c_str());
+                } else {
+                    log_i("Removed directory: %s", fileName.c_str());
+                }
+            }
+        }
+    } else {
+        log_i("Flash filesystem formatted successfully.");
+    }
+
+    /* Release access to flash */
+    m_flash_accessor = FLASH_ACCESSOR_NONE;
+
+    /* Log */
+    log_i("Flash filesystem wiped successfully.");
+
+    /* Return success */
+    return 0;
+}
+
+/**
  * @brief
  * @param[out] temperature_c
  * @return
@@ -1420,6 +1488,24 @@ int settings_diagnotics_usb_voltage_max_report(const float voltage) {
         m_modified = true;
         m_modified_immediate = true;
     }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Wipe all settings.
+ * @return 0 on success, negative error code on failure
+ * @note This function will wipe all settings, including the important ones such as product information.
+ */
+int settings_wipe(void) {
+
+    /* Clear json document */
+    m_doc.clear();
+
+    /* Mark settings as modified */
+    m_modified = true;
+    m_modified_immediate = true;
 
     /* Return success */
     return 0;
