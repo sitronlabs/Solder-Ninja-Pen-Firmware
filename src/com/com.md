@@ -435,7 +435,7 @@ Sets the user information (icon data and name).
 
 ### 12. `controller_status_get`
 
-Retrieves the current device status (state, target temperature, measured temperature).
+Retrieves the current device status (state, temperatures, boost mode, and connection status).
 
 **Request:**
 ```json
@@ -446,15 +446,33 @@ Retrieves the current device status (state, target temperature, measured tempera
 ```json
 {
   "result": "success",
-  "status": {
-    "state": <state_value>,
-    "temperature": {
-      "target": <target_temperature>,
-      "measured": <measured_temperature>
+  "state": "active",
+  "temperature": {
+    "target": 350.0,
+    "measured": 345.2
+  },
+  "boost": false,
+  "element": [
+    {
+      "connected": true,
+      "temperature": 345.2
     }
-  }
+  ]
 }
 ```
+
+**Response Fields:**
+- `state` (string): Current controller state
+  - `"locked"`: Device is locked (heating disabled)
+  - `"asleep"`: Device is in sleep mode
+  - `"active"`: Device is heating
+  - `"unknown"`: Unknown state (should not occur)
+- `temperature.target` (float): Target temperature in Celsius
+- `temperature.measured` (float): Measured temperature in Celsius
+- `boost` (boolean): Whether boost mode is currently activated
+- `element` (array): Array of heating element information
+  - `element[0].connected` (boolean): Whether the heating element/tip is connected
+  - `element[0].temperature` (float): Measured temperature of the element in Celsius
 
 **Failure Response:**
 ```json
@@ -465,12 +483,9 @@ Retrieves the current device status (state, target temperature, measured tempera
 ```
 
 **Notes:**
-- `state`: Application state value (integer)
-  - `APP_STATE_LOCKED` (0)
-  - `APP_STATE_ASLEEP` (1)
-  - `APP_STATE_ACTIVE` (2)
-- `temperature.target`: Target temperature in Celsius (float)
-- `temperature.measured`: Measured temperature in Celsius (float)
+- Returns comprehensive device status in a single call
+- State is returned as a human-readable string rather than an integer
+- All temperature values are in Celsius
 
 ---
 
@@ -875,5 +890,5 @@ Response: {"result":"success","temperature_c":350.0}
 ### Get Status
 ```json
 Request:  {"action": "controller_status_get"}
-Response: {"result":"success","status":{"state":2,"temperature":{"target":350.0,"measured":345.2}}}
+Response: {"result":"success","state":"active","temperature":{"target":350.0,"measured":345.2},"boost":false,"element":[{"connected":true,"temperature":345.2}]}
 ```

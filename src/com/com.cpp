@@ -454,18 +454,33 @@ static int m_command_process(const char *const str, const size_t len) {
             return 0;
         }
 
+        /* Retrieve state and convert to string */
+        enum controller_state state = controller_state_get();
+        const char *state_string;
+        switch (state) {
+            case CONTROLLER_STATE_LOCKED:
+                state_string = "locked";
+                break;
+            case CONTROLLER_STATE_ASLEEP:
+                state_string = "asleep";
+                break;
+            case CONTROLLER_STATE_ACTIVE:
+                state_string = "active";
+                break;
+            default:
+                state_string = "unknown";
+                break;
+        }
+
         /* Build response */
         StaticJsonDocument<1024> response;
         response["result"] = "success";
-        response["status"]["state"] = controller_state_get();
-        response["status"]["temperature"]["target"] = temperature_target_c;
-        response["status"]["temperature"]["measured"] = temperature_measured_c;
-        // response["status"]["boost"] = controller_boost_activated_get();
-        // response["status"]["locked"] = controller_locked_get();
-        // response["status"]["connected"] = element_connected_get();
-        // response["status"]["temperature"] = element_temperature_get();
-        // response["status"]["power"] = element_power_get();
-        // response["status"]["error"] = element_error_get();
+        response["state"] = state_string;
+        response["temperature"]["target"] = temperature_target_c;
+        response["temperature"]["measured"] = temperature_measured_c;
+        response["boost"] = controller_boost_activated_get();
+        response["element"][0]["connected"] = (element_connected_get() != 0);
+        response["element"][0]["temperature"] = temperature_measured_c;
         serializeJson(response, Serial);
         Serial.println();
     }
