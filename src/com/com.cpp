@@ -537,6 +537,30 @@ static int m_command_process(const char *const str, const size_t len) {
         }
     }
 
+    /* Command to reboot the system */
+    else if (doc[F("action")] == F("system_reboot")) {
+        /* Send success response */
+        Serial.println(F("{\"result\":\"success\"}"));
+
+        /* Flush serial output to ensure response is sent */
+        Serial.flush();
+
+        /* Small delay to ensure response is transmitted */
+        delay(100);
+
+        /* Reboot the system */
+#if R8A
+        /* Use rp2040.restart() for Arduino-Pico */
+        rp2040.restart();
+#else
+        /* For STM32, trigger watchdog reset */
+        /* The watchdog will reset the system if not fed */
+        while (1) {
+            /* Infinite loop - watchdog will reset the system */
+        }
+#endif
+    }
+
     /* Unknown command */
     else {
         Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Unknown command!\"]}"));

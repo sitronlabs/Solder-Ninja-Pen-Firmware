@@ -780,6 +780,36 @@ Retrieves the maximum USB voltage recorded (diagnostics data).
 
 ---
 
+### 22. `system_reboot`
+
+Reboots the system (microcontroller reset).
+
+**Request:**
+```json
+{"action": "system_reboot"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Unknown command!"]
+}
+```
+
+**Notes:**
+- The system will reboot immediately after sending the success response
+- The response is sent and flushed before the reboot occurs
+
+---
+
 ## Failure Responses
 
 All commands follow a consistent failure response format:
