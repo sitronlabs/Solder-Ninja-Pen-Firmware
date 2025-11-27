@@ -3,6 +3,7 @@
 [![PayPal Donate](https://img.shields.io/badge/PayPal-Donate-00457C.svg?logo=paypal&logoColor=white)](https://www.paypal.com/donate/?hosted_button_id=QLX8VU9Q3PFFL)
 ![License](https://img.shields.io/github/license/sitronlabs/Solder-Ninja-Pen-Firmware.svg)
 ![Latest Release](https://img.shields.io/github/release/sitronlabs/Solder-Ninja-Pen-Firmware.svg)
+![Latest Build](https://github.com/sitronlabs/Solder-Ninja-Pen-Firmware/actions/workflows/build.yaml/badge.svg)
 
 # Solder Ninja Pen Firmware
 

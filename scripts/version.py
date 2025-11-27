@@ -21,11 +21,59 @@ def sanitize_branch_name(branch_name):
     sanitized = re.sub(r'[^a-zA-Z0-9]', '', branch_name)
     return sanitized or "unknown"
 
+def detect_branch():
+
+    # 1) GitHub Actions environment (cheap & reliable)
+    # - Pull Requests: GITHUB_HEAD_REF is the source branch
+    gh_head = os.environ.get("GITHUB_HEAD_REF")
+    if gh_head:
+        return gh_head
+
+    # - Push to a branch: GITHUB_REF_TYPE=branch and GITHUB_REF_NAME has the branch
+    if os.environ.get("GITHUB_REF_TYPE") == "branch":
+        gh_ref_name = os.environ.get("GITHUB_REF_NAME")
+        if gh_ref_name:
+            return gh_ref_name
+
+    # 2) Plain git: if not detached, use it
+    b = safe_git_command("git rev-parse --abbrev-ref HEAD")
+    if b and b not in ("HEAD", "unknown"):
+        return b
+
+    # 3) Detached HEAD (e.g., tag builds): try to find a remote branch containing this commit
+    #    NOTE: works best if the workflow used 'fetch-depth: 0' in actions/checkout.
+    current_commit = safe_git_command("git rev-parse HEAD")
+    if current_commit and current_commit != "unknown":
+        # First, try to find branches that point to the exact same commit (most likely source branch)
+        exact_match = safe_git_command(f"git branch -r --points-at {current_commit}")
+        exact_names = [re.sub(r'.*origin/', '', ln.strip().lstrip('* ')) for ln in exact_match.splitlines() if 'origin/' in ln and ln.strip()]
+        if exact_names:
+            # Prefer master > main > develop > feature branches
+            for pref in ("master", "main", "develop"):
+                if pref in exact_names:
+                    return pref
+            # If no default branch found, use the first feature branch
+            return exact_names[0]
+        
+        # If no exact match, try branches containing this commit
+        candidates = safe_git_command("git branch -r --contains HEAD")
+        names = [re.sub(r'.*origin/', '', ln.strip().lstrip('* ')) for ln in candidates.splitlines() if 'origin/' in ln and ln.strip()]
+        if names:
+            # Prefer master > main > develop > feature branches
+            for pref in ("master", "main", "develop"):
+                if pref in names:
+                    return pref
+            # If no default branch found, use the first feature branch
+            return names[0]
+
+    # 4) Give up gracefully
+    return "unknown"
+
 # Save time
 version_datetime_utc = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
 # Retrieve version information from git
-git_branch = safe_git_command("git rev-parse --abbrev-ref HEAD")
+git_branch = detect_branch()
 git_describe = safe_git_command("git describe --always --tags --long --dirty")
 
 # Parse git describe output

@@ -1,0 +1,61 @@
+name: PlatformIO Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            ~/.platformio/toolcache
+          key: pio-${{ runner.os }}-r8-${{ hashFiles('platformio.ini', 'platformio.lock', 'src/**', 'scripts/**') }}
+          restore-keys: |
+            pio-${{ runner.os }}-r8-
+            pio-${{ runner.os }}-
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Update PlatformIO dependencies
+        run: |
+          pio pkg update --global
+          pio pkg update
+
+      - name: Build PlatformIO Project
+        run: pio run -e slto00001-r8a
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            .pio/build/**/*.bin
+            .pio/build/**/*.elf
+            .pio/build/**/*.uf2
+          retention-days: 7
+          if-no-files-found: warn
