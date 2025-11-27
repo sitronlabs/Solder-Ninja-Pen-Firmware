@@ -1,0 +1,1596 @@
+/* Self header */
+#include "power.h"
+
+/* Project headers */
+#include "errors/errors.h"
+#include "log/log.h"
+#include "settings/settings.h"
+
+/* Arduino headers */
+#include <dac5311.h>
+#include <fsusb43.h>
+#include <fusb302.h>
+#include <pi3usb9281c.h>
+
+/* Config */
+#define POWER_OPTIONS_LIMIT 10  //!< Maximum number of power options to track
+
+/* Peripherals */
+static fsusb43 m_fsusb43;         //!< USB mux controller
+static fusb302 m_fusb302;         //!< USB Type-C and PD PHY controller
+static pi3usb9281c m_pi3usb9281;  //!< USB charger detection IC
+static dac5311 m_dac;             //!< DAC for buck converter regulation
+
+/* Power options management */
+static struct {
+    bool assigned;
+    struct power_option option;
+} m_options[POWER_OPTIONS_LIMIT];
+static bool m_options_changed = false;
+
+/* HVDCP pin assignments for high voltage charging negotiation */
+static int m_qc_dn_h_pin = 16;  //!< HVDCP D- upper resistor pin
+static int m_qc_dp_h_pin = 18;  //!< HVDCP D+ upper resistor pin
+static int m_qc_dn_l_pin = 17;  //!< HVDCP D- lower resistor pin
+static int m_qc_dp_l_pin = 19;  //!< HVDCP D+ lower resistor pin
+static int m_qc_dn_m_pin = 29;  //!< HVDCP D- middle resistor pin
+static int m_qc_dp_m_pin = 28;  //!< HVDCP D+ middle resistor pin
+
+/**
+ * @brief Adjusts the buck converter output voltage based on desired power limit
+ *
+ * This function calculates the required DAC voltage to achieve the target power output
+ * by considering the buck converter efficiency and load resistance.
+ *
+ * @param[in] power_limit Desired output power in watts (must be > 0)
+ * @return 0 on success, negative error code otherwise
+ *
+ * @note Current implementation uses fixed efficiency (80%) and load resistance (2.1Ω).
+ *       Future improvements could include:
+ *       - Dynamic efficiency calculation based on Vin, Vout, Iout, and temperature
+ *       - Temperature-dependent load resistance modeling using thermal coefficient
+ *       - Closed-loop feedback using measured voltage/current for precise regulation
+ */
+static int m_adjust_buck(const float power_limit) {
+
+    /* Calculate required buck converter output voltage
+     * Using power formula: P = V²/R, solving for V = sqrt(P * R)
+     * Where R is the load resistance (2.1Ω) and efficiency is considered */
+    const float buck_efficiency = 0.80f;
+    const float load_resistance = 2.1f;
+    float buck_voltage = sqrt((power_limit * buck_efficiency) * load_resistance);
+    log_d("Using buck voltage of %.2fV.", buck_voltage);
+
+    /* Configure DAC5311 to set the buck converter output voltage
+     * Using iterative approach to find optimal DAC setting
+     * @note This could be optimized with direct calculation:
+     * Vdac = (Vref * (1 + Rtop/Rbot + Rtop/Rdac) - Vout_target) * (Rdac/Rtop)
+     * DAC_code = (Vdac / 3.3V) * 255 */
+    const float rtop = 590 * 1000;   // Top resistor value (590kΩ)
+    const float rbot = 63.4 * 1000;  // Bottom resistor value (63.4kΩ)
+    const float rdac = 300 * 1000;   // DAC resistor value (300kΩ)
+    const float vref = 0.7;          // Reference voltage (0.7V)
+
+    for (uint16_t i = 0; i < 256; i++) {
+        float vdac = 3.3 * (i / 255.00);
+        float vout = vref * (1 + rtop / rbot) + (vref - vdac) * (rtop / rdac);
+
+        /* Check if this DAC setting produces the desired output voltage */
+        if ((vout <= buck_voltage) || (i == 255)) {
+
+            /* Update dac */
+            log_d("Using vdac %.2fV for vout %.2fV.", vdac, vout);
+            int res = m_dac.output_voltage_set(vdac);
+            if (res < 0) {
+                log_e("Failed to configure DAC!");
+                return -1;
+            }
+
+            /* Return success */
+            return 0;
+        }
+    }
+
+    /* Return failure */
+    return -1;
+}
+
+/**
+ * @brief Computes the maximum power offered by the given power option
+ *
+ * Calculates the maximum power available from a power option based on its type.
+ * For voltage/current limited options, power is calculated as V × I.
+ * For fixed power options, the power_max value is returned directly.
+ *
+ * @param[in] option The power option to evaluate
+ * @return Maximum power in watts, or 0 if option type is invalid
+ */
+static float m_option_power_max_compute(struct power_option &option) {
+    switch (option.type) {
+        case POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT:
+        case POWER_TYPE_VARIABLE_VOLTAGE_FIXED_CURRENT: {
+            return option.voltage_max * option.current_max;
+        }
+        case POWER_TYPE_VARIABLE_VOLTAGE_FIXED_POWER: {
+            return option.power_max;
+        }
+        default: {
+            return 0;
+        }
+    }
+}
+
+/**
+ * @brief Adds a power option to the internal options list
+ *
+ * This function adds a new power option to the available options list and determines
+ * if it offers more power than the currently available options. The function will
+ * find the first available slot and store the option there.
+ *
+ * @param[in] option The power option to add to the list
+ * @return 1 if the new option offers more power than existing options,
+ *         0 if it offers the same or less power,
+ *         -1 if no space is available in the options list
+ *
+ * @note This function automatically sets the m_options_changed flag when a new option is added
+ */
+static int m_options_add(struct power_option &option) {
+
+    /* Find out the maximum amount of power offered by the options already in the list */
+    float power_max = 0.0f;
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        if (m_options[i].assigned == true) {
+            float power_iter = m_option_power_max_compute(m_options[i].option);
+            if (power_iter > power_max) {
+                power_max = power_iter;
+            }
+        }
+    }
+
+    /* Find an available slot and add the new option */
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        if (m_options[i].assigned == false) {
+            /* Copy the option data to the available slot */
+            memcpy(&m_options[i].option, &option, sizeof(struct power_option));
+            m_options[i].assigned = true;
+
+            /* Mark that the options list has been modified */
+            m_options_changed = true;
+
+            /* Determine if this new option offers more power than existing ones */
+            float new_option_power = m_option_power_max_compute(option);
+            return (new_option_power > power_max) ? 1 : 0;
+        }
+    }
+
+    /* Return no available slots found */
+    return -1;
+}
+
+/**
+ * @brief Clears all power options from the internal options list
+ *
+ * This function marks all power option slots as unassigned and sets the
+ * options changed flag to trigger a re-evaluation of available power.
+ *
+ * @note This function is typically called when starting a new power negotiation or when resetting the power management system
+ */
+static void m_options_clear(void) {
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        m_options[i].assigned = false;
+    }
+    m_options_changed = true;
+}
+
+/**
+ * @brief Initializes the power management module and all associated peripherals
+ *
+ * This function sets up all the hardware components required for USB power negotiation:
+ * - USB charger detection IC (PI3USB9281C)
+ * - USB mux controller (FSUSB43)
+ * - USB Type-C and PD PHY (FUSB302)
+ * - DAC for buck converter regulation (DAC5311)
+ * - Platform-specific DC-DC converter control
+ *
+ * @return 0 on success, negative error code otherwise
+ * @retval -ERROR_PERIPHERAL_SETUP_ERROR if any peripheral fails to initialize
+ */
+int power_setup(void) {
+    int res;
+
+    /* Initialize USB charger detection IC (PI3USB9281C)
+     * This IC detects USB charging capabilities and port types */
+    res = m_pi3usb9281.setup(Wire, 0x25, 7);  // TODO: R4J
+    if (res < 0) {
+        log_e("Failed to setup PI3USB9281C charger detection IC!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+
+    /* Initialize USB mux controller (FSUSB43)
+     * Routes USB signals between internal PHY and resistor network for HVDCP */
+    m_fsusb43.setup(7);
+    m_fsusb43.output_select(FSUSB43_OUTPUT_1);
+
+    /* Initialize USB Type-C and Power Delivery PHY (FUSB302)
+     * Handles Type-C detection, orientation, and PD negotiation */
+    res = m_fusb302.setup(Wire, 0x22);
+    if (res < 0) {
+        log_e("Failed to setup FUSB302 Type-C/PD PHY!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+
+#if R4J
+
+    /* Configure DC-DC converter enable pin */
+    pinMode(PC14, OUTPUT);
+    digitalWrite(PC14, LOW);
+
+    /* Initialize DAC for DC-DC converter regulation
+     * SPI bus, 8MHz clock, CS on PA1, 3.3V reference */
+    res = m_dac.setup(SPI, 8000000, PA1, 3.3);
+    if (res < 0) {
+        log_e("Failed to setup DAC for DC-DC regulation!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+
+#elif R8A
+
+    /* Configure DC-DC converter enable pin */
+    pinMode(3, OUTPUT);
+    digitalWrite(3, LOW);
+
+    /* Initialize DAC for DC-DC converter regulation
+     * SPI1 bus, 8MHz clock, CS on GPIO 20, 3.3V reference */
+    res = m_dac.setup(SPI1, 8000000, 20, 3.3);
+    if (res < 0) {
+        log_e("Failed to setup DAC for DC-DC regulation!");
+        return -ERROR_PERIPHERAL_SETUP_ERROR;
+    }
+
+#endif
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Finds the best power contract from available power providers
+ *
+ * This function searches through all available power options and returns the one
+ * that offers the highest power.
+ *
+ * @param[out] contract The best power contract found
+ * @return 0 on success, -1 if no power options are available
+ */
+int power_contract_get(struct power_option &contract) {
+    float power_max;
+    int index_max;
+
+    /* Find out the best contract offered by USB PD first */
+    power_max = 0;
+    index_max = -1;
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        if (m_options[i].assigned == true && m_options[i].option.provider == POWER_PROVIDER_USB_PD) {
+            float power_iter = m_option_power_max_compute(m_options[i].option);
+            if (power_iter > power_max) {
+                power_max = power_iter;
+                index_max = i;
+            }
+        }
+    }
+    if (index_max >= 0) {
+        contract = m_options[index_max].option;
+        return 0;
+    }
+
+    /* If no USB PD option exists, find out the best contrat in amongst the other options */
+    power_max = 0;
+    index_max = -1;
+    for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+        if (m_options[i].assigned == true) {
+            float power_iter = m_option_power_max_compute(m_options[i].option);
+            if (power_iter > power_max) {
+                power_max = power_iter;
+                index_max = i;
+            }
+        }
+    }
+    if (index_max >= 0) {
+        contract = m_options[index_max].option;
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+/**
+ * @brief Gets the currently negotiated power limit from the best available contract
+ *
+ * This function retrieves the maximum power available from the best power contract
+ * that has been negotiated. It uses the power_contract_get() function to find the best
+ * option and then calculates the maximum power that option can provide.
+ *
+ * @param[out] power_limit The negotiated power limit in watts
+ * @return 0 on success, -1 if no power contract is available
+ */
+int power_negotiated_power_limit_get(float &power_limit) {
+
+    int res;
+
+    /* Find out the maximum amount of power offered by the options */
+    struct power_option contract;
+    res = power_contract_get(contract);
+    if (res < 0) {
+        power_limit = 0;
+        return -1;
+    }
+
+    /* Return success */
+    power_limit = m_option_power_max_compute(contract);
+    return 0;
+}
+
+/**
+ * @brief Enables or disables the DC-DC converter supplying the tip with power
+ *
+ * This function controls the enable pin of the DC-DC converter to turn the power
+ * supply on or off. The specific pin used depends on the platform configuration.
+ *
+ * @param[in] enabled true to enable the power supply, false to disable
+ * @return 0 on success (always succeeds for now)
+ */
+int power_enabled_set(const bool enabled) {
+    if (enabled == true) {
+#if R4J
+        /* Turn on dc-dc */
+        digitalWrite(PC14, HIGH);
+#elif R8A
+        /* Turn on dc-dc */
+        digitalWrite(3, HIGH);
+#endif
+    } else {
+#if R4J
+        /* Turn off dc-dc */
+        digitalWrite(PC14, LOW);
+#elif R8A
+        /* Turn off dc-dc */
+        digitalWrite(3, LOW);
+#endif
+    }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Main power management task - handles power negotiation and regulation
+ *
+ * This is the main power management function that should be called periodically
+ * from the main application loop. It handles:
+ * - Buck converter regulation based on available power
+ * - USB power negotiation state machine
+ * - Error handling and retry logic
+ *
+ * The power negotiation follows this priority order:
+ * 1. USB Type-C detection and orientation
+ * 2. USB Power Delivery (PD) negotiation
+ * 3. USB Battery Charging (BC1.2) detection
+ * 4. HVDCP (High Voltage Dedicated Charging Port) negotiation
+ *
+ * @return 0 on success, negative error code otherwise
+ *
+ * @note This function implements a state machine and should be called frequently to ensure timely power negotiation
+ * @see State machine documentation below for detailed flow
+ */
+int power_task(void) {
+    int res;
+
+    /* Adjust buck converter based on best available power option if options have changed */
+    if (m_options_changed == true) {
+        m_options_changed = false;
+
+        /* Find the best available power option */
+        float power_best = 0;
+        for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+            if (m_options[i].assigned == true) {
+                float power_iter = m_option_power_max_compute(m_options[i].option);
+                if (power_iter > power_best) {
+                    power_best = power_iter;
+                }
+            }
+        }
+
+        /* Adjust buck converter */
+        res = m_adjust_buck(power_best);
+        if (res < 0) {
+            log_w("Failed to adjust buck converter to %.2fW", power_best);
+        } else {
+            log_d("Adjusted buck converter to %.2fW", power_best);
+        }
+    }
+
+    /* Power Negotiation State Machine
+     *
+     * This state machine implements a hierarchical power negotiation strategy:
+     *
+     * 1) USB Type-C Detection (TC_0 → TC_1 → TC_2):
+     *    - Detect Type-C cable orientation
+     *    - Determine basic power capabilities (0.5A, 1.5A, 3.0A)
+     *    - Add Type-C power option to available options
+     *
+     * 2) USB Power Delivery Negotiation (PD_0 → PD_1 → PD_2 → PD_3 → PD_4):
+     *    - Attempt PD capability exchange
+     *    - Parse source capabilities
+     *    - Request best available PD contract
+     *    - If successful, monitor PD contract (PD_MONITOR)
+     *    - If failed, fall back to BC1.2 detection
+     *
+     * 3) USB Battery Charging Detection (BC_0 → BC_1 → BC_2 → BC_3 → BC_4):
+     *    - Detect charging port type (SDP/CDP/DCP)
+     *    - Determine available current (0.5A/1.5A/2.4A)
+     *    - Add BC1.2 power option to available options
+     *    - If DCP detected, attempt HVDCP negotiation
+     *
+     * 4) HVDCP Negotiation (QC_0 → QC_1 → ... → QC_7):
+     *    - Only attempted if DCP was detected in BC1.2 phase
+     *    - Negotiate higher voltages (12V, 9V)
+     *    - Monitor negotiated voltage (QC_MONITOR)
+     *
+     * 5) Completion (DONE):
+     *    - Power negotiation complete
+     *    - Power source that doesn't require monitoring is active
+     *
+     * Error Handling:
+     * - Each protocol has retry counters (m_errors_*)
+     * - After 5 retries, fall back to next protocol
+     * - If all protocols fail, return to IDLE state */
+    static uint8_t m_errors_tc;
+    static uint8_t m_errors_bc;
+    static uint8_t m_errors_qc;
+    static uint8_t m_errors_pd;
+    static uint8_t m_pd_next_message_id;
+    static float m_pd_voltage;
+    static float m_pd_current;
+    static float m_qc_voltage;
+    static float m_qc_current;
+    static uint32_t m_timestamp;
+    static float m_diag_voltage_max;
+    static enum {
+        STATE_IDLE,
+        STATE_TC_0,
+        STATE_TC_1,
+        STATE_TC_2,
+        STATE_PD_0,
+        STATE_PD_1,
+        STATE_PD_2,
+        STATE_PD_3,
+        STATE_PD_4,
+        STATE_PD_MONITOR,
+        STATE_BC_0,
+        STATE_BC_1,
+        STATE_BC_2,
+        STATE_BC_3,
+        STATE_BC_4,
+        STATE_QC_0,
+        STATE_QC_1,
+        STATE_QC_2,
+        STATE_QC_3,
+        STATE_QC_4,
+        STATE_QC_5,
+        STATE_QC_6,
+        STATE_QC_7,
+        STATE_QC_MONITOR,
+        STATE_DONE,
+    } m_sm;
+    switch (m_sm) {
+
+        case STATE_IDLE: {
+
+            /* Reset error counters and flags */
+            m_errors_tc = 0;
+            m_errors_bc = 0;
+            m_errors_qc = 0;
+            m_errors_pd = 0;
+
+            /* Clear list of options */
+            m_options_clear();
+
+            /* Start with Type-C */
+            m_sm = STATE_TC_0;
+            break;
+        }
+
+        case STATE_TC_0: {
+
+            /* Don't retry too many times */
+            if (m_errors_tc > 5) {
+                log_e("Too many tc errors!");
+                m_sm = STATE_BC_0;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_TC_1;
+            break;
+        }
+
+        case STATE_TC_1: {
+
+            /* Ensure ic is detected */
+            if (m_fusb302.detect() != true) {
+                log_e("Failed to detect fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Reset internal registers */
+            res = m_fusb302.reset();
+            if (res < 0) {
+                log_e("Failed to reset fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_TC_2;
+            break;
+        }
+
+        case STATE_TC_2: {
+
+            /* Wait a little bit after reset */
+            if ((millis() - m_timestamp) < 15) {
+                break;
+            }
+
+            /* Enable power to all internal circuitry */
+            res = m_fusb302.power_set(true);
+            if (res < 0) {
+                log_e("Failed to configure fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Ensure pulldown resistors are enabled */
+            res = m_fusb302.cc_pull_down();
+            if (res < 0) {
+                log_e("Failed to configure fusb302 ic!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Measure voltages on the cc pins to determine
+             * 1) the orientation of the usb type-c cable
+             * 2) the current limit reported by the dfp */
+            enum usb_typec_cc_status cc1, cc2;
+            res = m_fusb302.cc_measure(cc1, cc2);
+            if (res < 0) {
+                log_e("Failed to read cc voltages!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Detect orientation */
+            usb_typec_cc_orientation orientation;
+            if (cc1 > USB_TYPEC_CC_STATUS_OPEN && cc2 == USB_TYPEC_CC_STATUS_OPEN) {
+                log_d("Type-C orientation is default.");
+                orientation = USB_TYPEC_CC_ORIENTATION_NORMAL;
+            } else if (cc1 == USB_TYPEC_CC_STATUS_OPEN && cc2 > USB_TYPEC_CC_STATUS_OPEN) {
+                log_d("Type-C orientation is flipped.");
+                orientation = USB_TYPEC_CC_ORIENTATION_REVERSE;
+            } else {
+                log_w("Invalid cc pin logic");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Set orientation */
+            res = m_fusb302.cc_orientation_set(orientation);
+            if (res < 0) {
+                log_e("Failed to set orientation!");
+                m_sm = STATE_TC_0;
+                m_errors_tc++;
+                break;
+            }
+
+            /* Determine current limit based on cc pin voltage */
+            float current = 0.0;
+            if (cc1 == USB_TYPEC_CC_STATUS_RP_3_0 || cc2 == USB_TYPEC_CC_STATUS_RP_3_0) {
+                log_i("Type-C src advertises 3.0A.");
+                current = 3.0;
+            } else if (cc1 == USB_TYPEC_CC_STATUS_RP_1_5 || cc2 == USB_TYPEC_CC_STATUS_RP_1_5) {
+                log_i("Type-C src advertises 1.5A.");
+                current = 1.5;
+            } else if (cc1 == USB_TYPEC_CC_STATUS_RP_DEF || cc2 == USB_TYPEC_CC_STATUS_RP_DEF) {
+                log_i("Type-C src advertises 0.5A.");
+                current = 0.5;
+            }
+
+            /* Add power option */
+            struct power_option option = {
+                .provider = POWER_PROVIDER_USB_TC,
+                .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                .voltage_min = 5.0f,
+                .voltage_max = 5.0f,
+                .current_max = current,
+            };
+            m_options_add(option);
+
+            /* Move on */
+            m_sm = STATE_PD_0;
+            break;
+        }
+
+        case STATE_PD_0: {
+
+            /* Don't retry too many times */
+            if (m_errors_pd > 5) {
+                log_e("Too many pd errors!");
+                m_sm = STATE_BC_0;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_PD_1;
+            break;
+        }
+
+        case STATE_PD_1: {
+
+            /* Enable automatic retransmission */
+            res = m_fusb302.pd_autoretry_set(3);
+            if (res < 0) {
+                log_e("Failed to enable fusb302 auto retry!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Enable automatic goodcrc
+             * @note Starting from here, ensure the firmware doesn't stall the processing of pd messages that needs to happen in roughly 10ms */
+            res = m_fusb302.pd_autogoodcrc_set(true);
+            if (res < 0) {
+                log_e("Failed to enable fusb302 auto goodcrc!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Flush TX fifo */
+            res = m_fusb302.pd_tx_flush();
+            if (res < 0) {
+                log_e("Failed to flush fusb302 tx fifo!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Flush RX fifo */
+            res = m_fusb302.pd_rx_flush();
+            if (res < 0) {
+                log_e("Failed to flush fusb302 rx fifo!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Reset PD logic */
+            res = m_fusb302.pd_reset_logic();
+            if (res < 0) {
+                log_e("Failed to reset fusb302 pd logic!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Clear pd related variables */
+            m_pd_next_message_id = 0;
+            m_pd_voltage = 0;
+            m_pd_current = 0;
+
+            /* Clear pd related power options */
+            for (unsigned int i = 0; i < POWER_OPTIONS_LIMIT; i++) {
+                if (m_options[i].option.provider == POWER_PROVIDER_USB_PD) {
+                    m_options[i].assigned = false;
+                }
+            }
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_PD_2;
+            break;
+        }
+
+        case STATE_PD_2: {
+
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming pd messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 1) {
+
+                /* Log */
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
+                for (unsigned int i = 0; i < response.object_count; i++) {
+                    log_d(" - Object %u=0x%08X", i, response.objects[i]);
+                }
+
+                /* Handle source capabilities message */
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count > 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES)) {
+
+                    /* Parse each pdo looking for the most interesting one
+                     * For now we only handle fixed pdos
+                     * Ideally we want to find a pdo that gives us 45W with a voltage of less than 17V, but we can go up to 20V if needed */
+                    double power_best = 0;
+                    int8_t power_best_index = -1;
+                    for (uint8_t i = 0; i < response.object_count; i++) {
+                        switch (response.objects[i] >> 30U) {
+
+                            case USB_PD_PDO_TYPE_FIXED: {
+                                double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
+                                double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
+                                double power_max = voltage * current;
+                                double power_usable = power_max > 45 ? 45 : power_max;
+                                log_i("Received fixed pdo %fV %fA", voltage, current);
+                                if (voltage <= 17) {
+                                    if (power_usable >= power_best) {
+                                        power_best = power_usable;
+                                        power_best_index = i;
+                                        m_pd_current = power_usable / voltage;
+                                        m_pd_voltage = voltage;
+                                    }
+                                } else if (voltage <= 20) {
+                                    if (power_usable > power_best) {
+                                        power_best = power_usable;
+                                        power_best_index = i;
+                                        m_pd_current = power_usable / voltage;
+                                        m_pd_voltage = voltage;
+                                    }
+                                }
+                                break;
+                            }
+
+                            default: {
+                                log_w("Received unsupported pdo.");  // TODO: Add support for other pdo types?
+                                break;
+                            }
+                        }
+                    }
+
+                    /* Request the most interesting pdo */
+                    if (power_best_index >= 0) {
+
+                        /* Build message */
+                        struct usb_pd_message request = {};
+                        request.sop_type = USB_PD_SOP_TYPE_DEFAULT;
+                        request.header = 0;
+                        request.header |= (m_pd_next_message_id & 0b111) << 9;
+                        request.header |= (USB_PD_PROTOCOL_REVISION_2_0 << 6);
+                        request.header |= USB_PD_MESSAGE_TYPE_DATA_REQUEST;
+                        uint16_t current_10ma = m_pd_current * 100;
+                        request.object_count = 1;
+                        request.objects[0] = 0;
+                        request.objects[0] |= ((power_best_index + 1) << 28);
+                        request.objects[0] |= (0 << 27);  // No GiveBack support for now
+                        request.objects[0] |= (1 << 25);  // USB Communications Capable
+                        request.objects[0] |= (1 << 24);  // No USB Suspend
+                        request.objects[0] |= (current_10ma << 10);
+                        request.objects[0] |= (current_10ma << 0);
+
+                        /* Log */
+                        log_i("Requesting pdo at index %u", power_best_index);
+
+                        /* Send message */
+                        res = m_fusb302.pd_message_send(request);
+                        if (res < 0) {
+                            log_e("Failed to request pdo (%d)!", res);
+                            m_sm = STATE_PD_0;
+                            m_errors_pd++;
+                            break;
+                        }
+
+                        /* Move on */
+                        m_timestamp = millis();
+                        m_sm = STATE_PD_3;
+                        break;
+                    }
+                }
+
+                /* Handle other messages */
+                else {
+                    log_w("Unexpected pd message (1).");
+                }
+            }
+
+            /* If no source capabilities message received after tFirstSourceCap (250ms), trigger a hard reset as per section 6.6.3.3 */
+            if ((millis() - m_timestamp) >= 250) {
+
+                /* Log */
+                log_w("No source capabilities received.");
+
+                /* Send hard reset sequence */
+                res = m_fusb302.pd_reset_hard();
+                if (res < 0) {
+                    log_e("Failed to send hard reset sequence (%d)!", res);
+                    m_sm = STATE_PD_0;
+                    m_errors_pd++;
+                    break;
+                }
+
+                /* Move on */
+                m_sm = STATE_BC_0;
+                break;
+            }
+
+            /* Stay here */
+            break;
+        }
+
+        case STATE_PD_3: {
+
+            /* Watch for timeout
+             * @see Section 6.6.2
+             * @see tReceiverResponse = 15 ms
+             * @todo Revert to 15ms? */
+            if ((millis() - m_timestamp) >= 115) {
+                log_e("No response received!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming pd messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 1) {
+
+                /* Log */
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
+                for (unsigned int i = 0; i < response.object_count; i++) {
+                    log_d(" - Object %u=0x%08X", i, response.objects[i]);
+                }
+
+                /* Handle good crc */
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC)) {
+                    log_d("Good crc received.");
+
+                    /* Increment message id */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+                }
+
+                /* Handle accept message */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_ACCEPT)) {
+                    log_i("Pdo request accepted.");
+
+                    /* Move on */
+                    m_timestamp = millis();
+                    m_sm = STATE_PD_4;
+                    break;
+                }
+
+                /* Handle reject message */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_REJECT)) {
+                    log_w("Pdo request rejected.");
+                    m_sm = STATE_PD_0;
+                    m_errors_pd++;
+                    break;
+                }
+
+                /* Handle other messages */
+                else {
+                    log_w("Unexpected pd message (2).");
+                }
+            }
+
+            /* Otherwise stay in this state */
+            break;
+        }
+
+        case STATE_PD_4: {
+
+            /* Watch for timeout
+             * @see Section 6.6.5.1
+             * @see tPSTransition = 450 to 550 ms */
+            if ((millis() - m_timestamp) >= 650) {
+                log_e("No response received.");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            }
+
+            /* Look for incoming messages */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming pd messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 1) {
+
+                /* Log */
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
+                for (unsigned int i = 0; i < response.object_count; i++) {
+                    log_d(" - Object %u=0x%08X", i, response.objects[i]);
+                }
+
+                /* Handle good crc */
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC)) {
+                    log_d("Good crc received.");
+
+                    /* Increment message id */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+                }
+
+                /* Handle ready message */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_PS_RDY)) {
+
+                    /* Log */
+                    log_i("Pd supply ready, delivering %.2fV %.2fA", m_pd_voltage, m_pd_current);
+
+                    /* Add power option */
+                    struct power_option option = {
+                        .provider = POWER_PROVIDER_USB_PD,
+                        .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                        .voltage_min = m_pd_voltage,
+                        .voltage_max = m_pd_voltage,
+                        .current_max = m_pd_current,
+                    };
+                    m_options_add(option);
+
+                    /* Move on */
+                    m_sm = STATE_PD_MONITOR;
+                    break;
+                }
+
+                /* Handle other messages */
+                else {
+                    log_w("Unexpected pd message (3).");
+                }
+            }
+
+            /* Otherwise stay in this state */
+            break;
+        }
+
+        case STATE_PD_MONITOR: {
+
+            /* Look for incoming messages and handle them.
+             * This is required as USB-PD is a stateful protocol that needs constant communication.
+             * The fusb302 will stop sending goodcrc responses if we don't process messages,
+             * which would cause the source to think we've disconnected. */
+            usb_pd_message response;
+            res = m_fusb302.pd_message_receive(response);
+            if (res < 0) {
+                log_e("Failed to check for incoming pd messages!");
+                m_sm = STATE_PD_0;
+                m_errors_pd++;
+                break;
+            } else if (res == 1) {
+
+                /* Log */
+                log_d("Received pd message: sop=%d, header=0x%04X, object_count=%d", response.sop_type, response.header, response.object_count);
+                for (unsigned int i = 0; i < response.object_count; i++) {
+                    log_d(" - Object %u=0x%08X", i, response.objects[i]);
+                }
+
+                /* Handle good crc */
+                if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count == 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_CONTROL_GOODCRC)) {
+                    log_d("Good crc received.");
+
+                    /* Increment message id */
+                    m_pd_next_message_id = (m_pd_next_message_id + 1) & 0b111;
+                }
+
+                /* Handle source capabilities message.
+                 * Some chargers will send another source capabilities message after negotiation.
+                 * This allows us to renegotiate power if better options become available,
+                 * for example when another device unplugs from a multi-port charger. */
+                else if ((response.sop_type == USB_PD_SOP_TYPE_DEFAULT) && (response.object_count > 0) && ((response.header & 0b11111) == USB_PD_MESSAGE_TYPE_DATA_SOURCE_CAPABILITIES)) {
+
+                    /* Parse each pdo looking for the most interesting one
+                     * For now we only handle fixed pdos
+                     * Ideally we want to find a pdo that gives us 45W with a voltage of less than 17V, but we can go up to 20V if needed */
+                    double power_best = 0;
+                    int8_t power_best_index = -1;
+                    for (uint8_t i = 0; i < response.object_count; i++) {
+                        switch (response.objects[i] >> 30U) {
+
+                            case USB_PD_PDO_TYPE_FIXED: {
+                                double voltage = ((response.objects[i] & 0x000FFC00) >> 10) * 0.05;
+                                double current = ((response.objects[i] & 0x000001FF) >> 0) * 0.01;
+                                double power_max = voltage * current;
+                                double power_usable = power_max > 45 ? 45 : power_max;
+                                log_i("Received fixed pdo %fV %fA", voltage, current);
+                                if (voltage <= 17) {
+                                    if (power_usable >= power_best) {
+                                        power_best = power_usable;
+                                        power_best_index = i;
+                                        m_pd_current = power_usable / voltage;
+                                        m_pd_voltage = voltage;
+                                    }
+                                } else if (voltage <= 20) {
+                                    if (power_usable > power_best) {
+                                        power_best = power_usable;
+                                        power_best_index = i;
+                                        m_pd_current = power_usable / voltage;
+                                        m_pd_voltage = voltage;
+                                    }
+                                }
+                                break;
+                            }
+
+                            default: {
+                                log_w("Received unsupported pdo.");  // TODO: Add support for other pdo types?
+                                break;
+                            }
+                        }
+                    }
+
+                    /* Request the most interesting pdo */
+                    if (power_best_index >= 0) {
+
+                        /* Build message */
+                        struct usb_pd_message request = {};
+                        request.sop_type = USB_PD_SOP_TYPE_DEFAULT;
+                        request.header = 0;
+                        request.header |= (m_pd_next_message_id & 0b111) << 9;
+                        request.header |= (USB_PD_PROTOCOL_REVISION_2_0 << 6);
+                        request.header |= USB_PD_MESSAGE_TYPE_DATA_REQUEST;
+                        uint16_t current_10ma = m_pd_current * 100;
+                        request.object_count = 1;
+                        request.objects[0] = 0;
+                        request.objects[0] |= ((power_best_index + 1) << 28);
+                        request.objects[0] |= (0 << 27);  // No GiveBack support for now
+                        request.objects[0] |= (1 << 25);  // USB Communications Capable
+                        request.objects[0] |= (1 << 24);  // No USB Suspend
+                        request.objects[0] |= (current_10ma << 10);
+                        request.objects[0] |= (current_10ma << 0);
+
+                        /* Log */
+                        log_d("Requesting pdo at index %u", power_best_index);
+
+                        /* Send message */
+                        res = m_fusb302.pd_message_send(request);
+                        if (res < 0) {
+                            log_e("Failed to request pdo (%d)!", res);
+                            m_sm = STATE_PD_0;
+                            m_errors_pd++;
+                            break;
+                        }
+
+                        /* Move on */
+                        m_timestamp = millis();
+                        m_sm = STATE_PD_3;
+                        break;
+                    }
+                }
+
+                /* Handle other messages */
+                else {
+                    log_w("Unexpected pd message (4).");
+                }
+            }
+
+            /* Don't retry too many times */
+            if (m_errors_pd > 5) {
+                log_e("Too many pd errors!");
+                m_sm = STATE_IDLE;
+                break;
+            }
+
+            /* Monitor vbus periodically
+             * @note While the FUSB302 is reading VBUS it cannot receive PD messages */
+            static uint32_t m_timestamp_vbus_monitor = 0;
+            if ((millis() - m_timestamp_vbus_monitor) >= 100) {
+                m_timestamp_vbus_monitor = millis();
+
+                /* Read vbus */
+                float vbus = 0;
+                res = m_fusb302.vbus_measure(vbus);
+                if (res < 0) {
+                    log_w("Failed to monitor vbus!");
+                    m_errors_pd++;
+                    break;
+                } else {
+                    m_errors_pd = 0;
+                }
+
+                /* Save max voltage in diagnostics */
+                if (vbus > m_diag_voltage_max) {
+                    m_diag_voltage_max = vbus;
+                    settings_diagnotics_usb_voltage_max_report(m_diag_voltage_max);
+                }
+
+                /* Ensure vbus is within 20% of the expected voltage
+                 * @note The FUSB302 has a resolution of 0.42V per step, so we need to allow for this when checking the voltage */
+                if (((vbus + 0.42f) < (m_pd_voltage * 0.8)) || ((vbus - 0.42f) > (m_pd_voltage * 1.2))) {
+
+                    /* Power source appears unstable, reverting to IDLE for full renegotiation.
+                     * @note Future improvement: Could try falling back to lower power mode
+                     * or previous working configuration instead of full restart */
+                    log_w("Measured out of range %.2fV vbus while monitoring pd.", vbus);
+                    m_sm = STATE_IDLE;
+                    break;
+                }
+            }
+
+            /* Stay here */
+            break;
+        }
+
+        case STATE_BC_0: {
+
+            /* Ensure the ic is detected */
+            if (m_pi3usb9281.detect() != true) {
+                log_e("Failed to detect pi3usb9281 ic!");
+                m_sm = STATE_DONE;
+                break;
+            }
+
+            /* Don't retry too many times */
+            if (m_errors_bc > 5) {
+                log_e("Too many bc errors!");
+                m_sm = STATE_DONE;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_BC_1;
+            break;
+        }
+
+        case STATE_BC_1: {
+
+            /* Inspired by the chromebook-ec provider code, perform a debounce.
+             * @see https://git.furworks.de/coreboot-mirror/chrome-ec/src/commit/1e800ac838504c0d2950c7aa90cdfe7bde251545/driver/bc12/pi3usb9281.c#L314 */
+            res = m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_OPEN);
+            if (res < 0) {
+                log_e("Failed to configure usb switches!");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            }
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_BC_2;
+            break;
+        }
+
+        case STATE_BC_2: {
+
+            /* Leave the switches open for 2 seconds before performing a new detection,
+             * less than that seems to not reliably detect some chargers. */
+            if ((millis() - m_timestamp) < 2000) {
+                break;
+            }
+
+            /* Reset ic which will automatically perform a new detection */
+            res = m_pi3usb9281.reset();
+            if (res < 0) {
+                log_e("Failed to reset pi3usb9281 ic!");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            }
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_BC_3;
+            break;
+        }
+
+        case STATE_BC_3: {
+
+            /* Wait */
+            if ((millis() - m_timestamp) < 15) {
+                break;
+            }
+
+            /* Watch for timeout */
+            if ((millis() - m_timestamp) >= 1500) {
+                log_w("Timed out when detecting a usb device, trying again...");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            }
+
+            /* Wait for a device attach event */
+            res = m_pi3usb9281.device_attach_get();
+            if (res < 0) {
+                log_w("Failed to detect a usb device, trying again...");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            } else if (res == 0) {
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_BC_4;
+            break;
+        }
+
+        case STATE_BC_4: {
+
+            /* Retrieve type of device */
+            enum pi3usb9281c_device_type type;
+            res = m_pi3usb9281.device_type_get(&type);
+            if (res < 0) {
+                log_w("Failed to determine type of usb device attached, trying again...");
+                m_sm = STATE_BC_0;
+                m_errors_bc++;
+                break;
+            }
+
+            /* Determine current limit */
+            float current = 0;
+            switch (type) {
+                case PI3USB9281C_DEVICE_TYPE_USB_CDP: {
+                    log_i("Detected usb device of type cdp (1.5A).");
+                    current = 1.5f;
+                    break;
+                }
+                case PI3USB9281C_DEVICE_TYPE_USB_DCP: {
+                    log_i("Detected usb device of type dcp (1.5A).");
+                    current = 1.5f;
+                    break;
+                }
+                case PI3USB9281C_DEVICE_TYPE_CHARGER_1A: {
+                    log_i("Detected usb device of type charger (1.0A).");
+                    current = 1.0f;
+                    break;
+                }
+                case PI3USB9281C_DEVICE_TYPE_CHARGER_2A: {
+                    log_i("Detected usb device of type charger (2.0A).");
+                    current = 2.0f;
+                    break;
+                }
+                case PI3USB9281C_DEVICE_TYPE_CHARGER_2_4A: {
+                    log_i("Detected usb device of type charger (2.4A).");
+                    current = 2.4f;
+                    break;
+                }
+                default: {
+                    log_i("Detected usb device of type sdp (0.5A).");
+                    current = 0.5f;
+                    break;
+                }
+            }
+
+            /* Add power option */
+            struct power_option option = {
+                .provider = POWER_PROVIDER_USB_BC,
+                .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                .voltage_min = 5.0f,
+                .voltage_max = 5.0f,
+                .current_max = current,
+            };
+            m_options_add(option);
+
+            /* Try HVDCP handshake if we detected a DCP charger during BC1.2 detection
+             * as HVDCP builds on top of standard DCP functionality */
+            if ((type == PI3USB9281C_DEVICE_TYPE_USB_DCP) ||     //
+                (type == PI3USB9281C_DEVICE_TYPE_CHARGER_1A) ||  //
+                (type == PI3USB9281C_DEVICE_TYPE_CHARGER_2A) ||  //
+                (type == PI3USB9281C_DEVICE_TYPE_CHARGER_2_4A)) {
+                m_sm = STATE_QC_0;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_DONE;
+            break;
+        }
+
+        case STATE_QC_0: {
+
+            /* Don't retry too many times */
+            if (m_errors_qc > 5) {
+                log_e("Too many qc errors!");
+                m_sm = STATE_DONE;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_QC_1;
+            break;
+        }
+
+        case STATE_QC_1: {
+
+            /* Reset all GPIO pins used for D+/D- voltage control.
+             * We use a resistor network to generate specific voltage levels. */
+            pinMode(m_qc_dn_h_pin, INPUT);
+            pinMode(m_qc_dn_m_pin, INPUT);
+            pinMode(m_qc_dn_l_pin, INPUT);
+            pinMode(m_qc_dp_h_pin, INPUT);
+            pinMode(m_qc_dp_m_pin, INPUT);
+            pinMode(m_qc_dp_l_pin, INPUT);
+
+            /* Route USB D+/D- to our voltage control network instead of USB data lines */
+            if (m_fsusb43.output_select(FSUSB43_OUTPUT_2) < 0 ||
+                m_pi3usb9281.switch_state_set(PI3USB9281C_SWITCH_STATE_MANUAL_CLOSED) < 0) {
+                log_e("Failed to route signals!");
+                m_sm = STATE_QC_0;
+                m_errors_qc++;
+                break;
+            }
+
+            /* Move on */
+            m_sm = STATE_QC_2;
+            break;
+        }
+
+        case STATE_QC_2: {
+
+            /* Begin HVDCP handshake step 1.
+             * To advertise that we are a HVDCP compliant sink device, we must present 0.325V-2V on D+ for at least 1.25 seconds.
+             * During this time, the source may keep D+ and D- shorted. */
+            pinMode(m_qc_dp_h_pin, OUTPUT);
+            pinMode(m_qc_dp_l_pin, OUTPUT);
+            digitalWrite(m_qc_dp_h_pin, HIGH);
+            digitalWrite(m_qc_dp_l_pin, LOW);
+
+            /* Configure ADC to monitor D- voltage for PSU response */
+            analogRead(A3);
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_QC_3;
+            break;
+        }
+
+        case STATE_QC_3: {
+
+            /* Wait minimum 1s before checking PSU response */
+            if ((millis() - m_timestamp) < 1000) {
+                break;
+            }
+
+            /* Continue with HVDCP handshake step 2.
+             * Source should discharge D- through pull-down resistor.
+             * We monitor D- voltage and wait for it to drop below 0.2V.
+             * Timeout after 3s if source doesn't respond. */
+            float pin_dn_voltage = (3.3 * analogRead(A3)) / 1023.0;
+            if (pin_dn_voltage > 0.2) {
+                if ((millis() - m_timestamp) > 3000) {
+                    log_w("HVDCP handshake timed out.");
+                    m_sm = STATE_DONE;
+                    break;
+                } else {
+                    break;
+                }
+            }
+            log_i("HVDCP handshake completed.");
+
+            /* Move on */
+            m_timestamp = millis();
+            m_sm = STATE_QC_4;
+            break;
+        }
+
+        case STATE_QC_4: {
+
+            /* Small delay before voltage request
+             * Not sure why, but let's leave it here for now */
+            if ((millis() - m_timestamp) < 2) {
+                break;
+            }
+
+            /* Request 12V output by setting: D+: 0.325V-2V, D-: 0.325V-2V */
+            log_d("Asking for 12V");
+            pinMode(m_qc_dp_h_pin, OUTPUT);
+            pinMode(m_qc_dp_l_pin, OUTPUT);
+            digitalWrite(m_qc_dp_h_pin, HIGH);
+            digitalWrite(m_qc_dp_l_pin, LOW);
+            pinMode(m_qc_dn_h_pin, OUTPUT);
+            pinMode(m_qc_dn_l_pin, OUTPUT);
+            digitalWrite(m_qc_dn_h_pin, HIGH);
+            digitalWrite(m_qc_dn_l_pin, LOW);
+
+            /* Move on */
+            m_qc_voltage = 12;
+            m_qc_current = 1.5;
+            m_timestamp = millis();
+            m_sm = STATE_QC_5;
+            break;
+        }
+
+        case STATE_QC_5: {
+
+            /* Wait for voltage transition (60ms) */
+            if ((millis() - m_timestamp) < 60) {
+                break;
+            }
+
+            /* Verify VBUS is at 12V ±20% */
+            float vbus = 0;
+            res = m_fusb302.vbus_measure(vbus);
+            if (res < 0) {
+                log_w("Failed to read vbus!");
+                m_errors_qc++;
+                m_sm = STATE_QC_0;
+                break;
+            }
+            if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
+                log_w("HVDCP Invalid voltage (measured %.2fV instead of %.2fV).", vbus, m_qc_voltage);
+                m_sm = STATE_QC_6;
+                break;
+            }
+
+            /* Add 12V/1.5A power option to available power sources */
+            struct power_option option = {
+                .provider = POWER_PROVIDER_USB_QC,
+                .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                .voltage_min = 12.0,
+                .voltage_max = 12.0,
+                .current_max = 1.5,
+            };
+            m_options_add(option);
+
+            /* Move on */
+            m_sm = STATE_QC_MONITOR;
+            break;
+        }
+
+        case STATE_QC_6: {
+
+            /* Request 9V output by setting: D+ >2V, D- 0.325V-2V */
+            log_d("Asking for 9V");
+            pinMode(m_qc_dp_h_pin, OUTPUT);
+            pinMode(m_qc_dp_l_pin, OUTPUT);
+            digitalWrite(m_qc_dp_h_pin, HIGH);
+            digitalWrite(m_qc_dp_l_pin, HIGH);
+            pinMode(m_qc_dn_h_pin, OUTPUT);
+            pinMode(m_qc_dn_l_pin, OUTPUT);
+            digitalWrite(m_qc_dn_h_pin, HIGH);
+            digitalWrite(m_qc_dn_l_pin, LOW);
+
+            /* Move on */
+            m_qc_voltage = 9;
+            m_qc_current = 2.0;
+            m_timestamp = millis();
+            m_sm = STATE_QC_7;
+            break;
+        }
+
+        case STATE_QC_7: {
+
+            /* Wait for voltage transition (60ms) */
+            if ((millis() - m_timestamp) < 60) {
+                break;
+            }
+
+            /* Verify VBUS is at 9V ±20% */
+            float vbus = 0;
+            res = m_fusb302.vbus_measure(vbus);
+            if (res < 0) {
+                log_w("Failed to read vbus!");
+                m_errors_qc++;
+                m_sm = STATE_QC_0;
+                break;
+            }
+            if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
+                log_w("HVDCP Invalid voltage (measured %.2fV instead of %.2fV).", vbus, m_qc_voltage);
+                m_sm = STATE_DONE;
+                break;
+            }
+
+            /* Add 9V/2.0A power option to available power sources */
+            struct power_option option = {
+                .provider = POWER_PROVIDER_USB_QC,
+                .type = POWER_TYPE_FIXED_VOLTAGE_LIMITED_CURRENT,
+                .voltage_min = 9.0,
+                .voltage_max = 9.0,
+                .current_max = 2.0,
+            };
+            m_options_add(option);
+
+            /* Move on */
+            m_sm = STATE_QC_MONITOR;
+            break;
+        }
+
+        case STATE_QC_MONITOR: {
+
+            /* Don't retry too many times */
+            if (m_errors_qc > 5) {
+                log_e("Too many qc errors!");
+                m_sm = STATE_IDLE;
+                break;
+            }
+
+            /* Monitor vbus periodically
+             * @note While the FUSB302 is reading VBUS it cannot receive PD messages */
+            static uint32_t m_timestamp_vbus_monitor = 0;
+            if ((millis() - m_timestamp_vbus_monitor) >= 100) {
+                m_timestamp_vbus_monitor = millis();
+
+                /* Read vbus */
+                float vbus = 0;
+                res = m_fusb302.vbus_measure(vbus);
+                if (res < 0) {
+                    log_w("Failed to monitor vbus!");
+                    m_errors_qc++;
+                    break;
+                } else {
+                    m_errors_qc = 0;
+                }
+
+                /* Save max voltage in diagnostics */
+                if (vbus > m_diag_voltage_max) {
+                    m_diag_voltage_max = vbus;
+                    settings_diagnotics_usb_voltage_max_report(m_diag_voltage_max);
+                }
+
+                /* Ensure vbus is within 20% of the expected voltage
+                 * @note The FUSB302 has a resolution of 0.42V per step, so we need to allow for this when checking the voltage */
+                if (((vbus + 0.42f) < (m_qc_voltage * 0.8)) || ((vbus - 0.42f) > (m_qc_voltage * 1.2))) {
+
+                    /* Power source appears unstable, reverting to IDLE for full renegotiation.
+                     * @note Future improvement: Could try falling back to BC1.2 mode (DCP)
+                     * instead of full restart since we know DCP was detected */
+                    log_w("Measured out of range %.2fV vbus while monitoring hvdcp.", vbus);
+                    m_sm = STATE_IDLE;
+                    break;
+                }
+            }
+
+            /* Stay here */
+            break;
+        }
+
+        case STATE_DONE: {
+
+            /* Monitor vbus periodically
+             * @note While the FUSB302 is reading VBUS it cannot receive PD messages */
+            static uint32_t m_timestamp_vbus_monitor = 0;
+            if ((millis() - m_timestamp_vbus_monitor) >= 100) {
+                m_timestamp_vbus_monitor = millis();
+
+                /* Read vbus */
+                float vbus = 0;
+                res = m_fusb302.vbus_measure(vbus);
+                if (res < 0) {
+                    break;
+                }
+
+                /* Save max voltage in diagnostics */
+                if (vbus > m_diag_voltage_max) {
+                    m_diag_voltage_max = vbus;
+                    settings_diagnotics_usb_voltage_max_report(m_diag_voltage_max);
+                }
+            }
+
+            /* Stay here */
+            break;
+        }
+
+        default: {
+            log_e("Hurray, we found a cosmic ray!");
+            m_sm = STATE_IDLE;
+            return -1;
+        }
+    }
+
+    /* Return success */
+    return 0;
+}
