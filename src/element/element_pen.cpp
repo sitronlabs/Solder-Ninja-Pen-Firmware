@@ -257,7 +257,7 @@ int element_task(void) {
              * 1) are not accurate right after heating,
              * 1) can be affected by electrically noisy environments
              * Note, this could be improved by rather looking at abnormal variations (sudden jumps from the running average) */
-            if ((temperature_thermocouple_c < 0) || (temperature_thermocouple_c > 500)) {
+            if ((temperature_thermocouple_c < -50) || (temperature_thermocouple_c > 500)) {
                 // log_t("Read %4.0f invalid", temperature_thermocouple_c);
 
                 /* If no valid temperature has been read for a long time, present the tip is disconnected */
