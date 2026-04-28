@@ -49,7 +49,7 @@ int accelerometer_setup(void) {
 
     /* Retrieve idle time from settings and fallback to default if not found */
     res = settings_accelerometer_idle_time_get(m_idle_time_ms);
-    if (res == 0) {
+    if (res <= 0) {
         m_idle_time_ms = CONFIG_ACCEL_IDLE_TIME_DEFAULT;
     }
 
