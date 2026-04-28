@@ -175,6 +175,7 @@ int accelerometer_task(void) {
             if (m_accel.detect() != true) {
                 log_e("Failed to detect accelerometer!");
                 m_sm = STATE_ERROR;
+                break;
             }
 
             /* Prepare the registers */
@@ -211,6 +212,7 @@ int accelerometer_task(void) {
             if (res != 0) {
                 log_e("Failed to configure accelerometer!");
                 m_sm = STATE_ERROR;
+                break;
             }
 
             /* Perform a dummy read to force the HP filter to the current acceleration value */
@@ -219,6 +221,7 @@ int accelerometer_task(void) {
             if (res != 0) {
                 log_e("Failed to configure accelerometer!");
                 m_sm = STATE_ERROR;
+                break;
             }
 
             /* Move on */
