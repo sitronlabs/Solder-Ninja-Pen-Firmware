@@ -11,6 +11,7 @@
 
 /* Constants */
 static constexpr uint32_t k_idle_duration_chip_max_ms = (uint32_t)(255.0 * 8.0 / 50.0 * 1000.0);  //!< Maximum idle duration that can be handled by the accelerometer IC
+static constexpr uint32_t k_idle_acceleration_step_mg = 16u;                                      //!< MG per ACT_THS / INT1_THS LSB at CTRL_REG4 FS=±2 g (must match STATE_0 register writes)
 
 /* Peripherals */
 static lis2dh12 m_chip;  //!< LIS2DH12 accelerometer instance
@@ -23,8 +24,9 @@ static bool m_chip_reconfigure_needed;  //!< Set to true when the accelerometer 
 static volatile uint32_t m_idle_detected_timestamp;  //!< Timestamp of when idle was detected by the accelerometer IC
 static volatile bool m_idle_detected;                //!< Set to true when abence of is detected by the accelerometer IC
 static volatile bool m_wake_detected;                //!< Set to true when motion is detected by the accelerometer IC
-static uint32_t m_idle_duration_chip_ms;             //!< Portion of idle time handled by accelerometer IC
-static uint32_t m_idle_duration_full_ms;             //!< Total idle time (sum of hardware and software portions)
+static uint32_t m_idle_duration_chip_ms;             //!< Portion of idle duration handled by accelerometer IC
+static uint32_t m_idle_duration_full_ms;             //!< Total idle duration (hardware + software extension)
+static uint32_t m_idle_acceleration_mg;              //!< Idle acceleration (milli-g); HP-path motion below this does not reset inactivity
 
 /* Variables for freefall detection */
 static volatile bool m_fall_detected;  //!< Set to true when freefall is detected by the accelerometer IC
@@ -64,6 +66,18 @@ int accelerometer_setup(void) {
             m_idle_duration_full_ms = CONFIG_ACCEL_IDLE_DURATION_MIN;
         } else if (m_idle_duration_full_ms > CONFIG_ACCEL_IDLE_DURATION_MAX) {
             m_idle_duration_full_ms = CONFIG_ACCEL_IDLE_DURATION_MAX;
+        }
+    }
+
+    /* Retrieve idle movement threshold from settings and fallback to default if not found */
+    res = settings_accelerometer_idle_acceleration_get(m_idle_acceleration_mg);
+    if (res <= 0) {
+        m_idle_acceleration_mg = CONFIG_ACCEL_IDLE_ACCELERATION_DEFAULT;
+    } else {
+        if (m_idle_acceleration_mg < CONFIG_ACCEL_IDLE_ACCELERATION_MIN) {
+            m_idle_acceleration_mg = CONFIG_ACCEL_IDLE_ACCELERATION_MIN;
+        } else if (m_idle_acceleration_mg > CONFIG_ACCEL_IDLE_ACCELERATION_MAX) {
+            m_idle_acceleration_mg = CONFIG_ACCEL_IDLE_ACCELERATION_MAX;
         }
     }
 
@@ -109,6 +123,52 @@ int accelerometer_idle_duration_set(const uint32_t duration_ms) {
     settings_accelerometer_idle_duration_set(m_idle_duration_full_ms);
 
     /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Get idle acceleration (milli-g); motion below this on the HP path does not reset inactivity.
+ * @param[out] acceleration_mg Idle acceleration (milli-g)
+ * @return 0 always
+ */
+int accelerometer_idle_acceleration_get(uint32_t &acceleration_mg) {
+    acceleration_mg = m_idle_acceleration_mg;
+    return 0;
+}
+
+/**
+ * @brief Set idle acceleration (milli-g) and persist; triggers accelerometer reconfiguration.
+ * @param[in] acceleration_mg Idle acceleration (milli-g)
+ * @return 0 on success, -EINVAL if out of range
+ */
+int accelerometer_idle_acceleration_set(const uint32_t acceleration_mg) {
+
+    /* Ensure value is valid */
+    if ((acceleration_mg < CONFIG_ACCEL_IDLE_ACCELERATION_MIN) || (acceleration_mg > CONFIG_ACCEL_IDLE_ACCELERATION_MAX)) {
+        log_e("Invalid idle acceleration!");
+        return -EINVAL;
+    }
+
+    /* Update the cached value */
+    m_idle_acceleration_mg = acceleration_mg;
+
+    /* Flag accelerometer for reconfiguration (will be handled by accelerometer_task()) */
+    m_chip_reconfigure_needed = true;
+
+    /* Persist the new value to settings storage */
+    settings_accelerometer_idle_acceleration_set(m_idle_acceleration_mg);
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Milli-g per ACT_THS LSB for idle acceleration (same step applies to INT1_THS at current FS).
+ * @param[out] step_mg Step (milli-g)
+ * @return 0 always
+ */
+int accelerometer_idle_acceleration_step_get(uint32_t &step_mg) {
+    step_mg = k_idle_acceleration_step_mg;
     return 0;
 }
 
@@ -224,13 +284,13 @@ int accelerometer_task(void) {
             if (reg_act_dur > 255) {
                 reg_act_dur = 255;
             }
-            float reg_act_ths = (1000 * CONFIG_ACCEL_IDLE_ACCELERATION_THRESHOLD) / 16.0;
+            float reg_act_ths = (float)m_idle_acceleration_mg / (float)k_idle_acceleration_step_mg;
             if (reg_act_ths < 0) {
                 reg_act_ths = 1;
             } else if (reg_act_ths > 255) {
                 reg_act_ths = 255;
             }
-            float reg_fall_ths = (1000 * CONFIG_ACCEL_FALL_ACCELERATION_THRESHOLD) / 16.0;
+            float reg_fall_ths = (1000.0f * (float)CONFIG_ACCEL_FALL_ACCELERATION_THRESHOLD) / (float)k_idle_acceleration_step_mg;
             if (reg_fall_ths < 0) {
                 reg_fall_ths = 1;
             } else if (reg_fall_ths > 255) {

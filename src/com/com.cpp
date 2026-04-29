@@ -523,6 +523,44 @@ static int m_command_process(const char *const str, const size_t len) {
         Serial.println(F("{\"result\":\"success\"}"));
     }
 
+    /* Command to retrieve the accelerometer idle acceleration (milli-g) */
+    else if (doc[F("action")] == F("accelerometer_idle_acceleration_get")) {
+
+        /* Retrieve accelerometer idle acceleration threshold */
+        uint32_t idle_acceleration_mg = 0;
+        (void)accelerometer_idle_acceleration_get(idle_acceleration_mg);
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["acceleration_mg"] = idle_acceleration_mg;
+        serializeJson(response, Serial);
+        Serial.println();
+    }
+
+    /* Command to set the accelerometer idle acceleration (milli-g) */
+    else if (doc[F("action")] == F("accelerometer_idle_acceleration_set")) {
+
+        /* Retrieve and verify argument */
+        const uint32_t idle_acceleration_mg = doc["acceleration_mg"] | 0;
+        if (idle_acceleration_mg < CONFIG_ACCEL_IDLE_ACCELERATION_MIN) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle acceleration too low!\"]}"));
+            return 0;
+        }
+        if (idle_acceleration_mg > CONFIG_ACCEL_IDLE_ACCELERATION_MAX) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle acceleration too high!\"]}"));
+            return 0;
+        }
+
+        /* Set new idle acceleration threshold */
+        res = accelerometer_idle_acceleration_set(idle_acceleration_mg);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set idle acceleration!\"]}"));
+            return 0;
+        }
+
+        /* Report success */
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
     /* Command to get heating time */
     else if (doc[F("action")] == F("heating_time_get")) {
         uint32_t heating_time = 0;

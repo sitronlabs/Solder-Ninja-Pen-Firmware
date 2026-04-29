@@ -1424,6 +1424,41 @@ int settings_accelerometer_idle_duration_set(const uint32_t duration_ms) {
 }
 
 /**
+ * @brief Gets the accelerometer idle acceleration (milli-g)
+ * @param[out] acceleration_mg Idle acceleration (milli-g)
+ * @return 1 if setting was found, 0 if not found (use default)
+ */
+int settings_accelerometer_idle_acceleration_get(uint32_t &acceleration_mg) {
+
+    /* Return if found */
+    if (m_doc["preferences"]["accelerometer"]["idle_acceleration_mg"].is<uint32_t>() == true) {
+        acceleration_mg = m_doc["preferences"]["accelerometer"]["idle_acceleration_mg"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief Sets the accelerometer idle acceleration (milli-g)
+ * @param[in] acceleration_mg Idle acceleration (milli-g)
+ * @return 0 on success
+ */
+int settings_accelerometer_idle_acceleration_set(const uint32_t acceleration_mg) {
+
+    /* Update json document */
+    m_doc["preferences"]["accelerometer"]["idle_acceleration_mg"] = acceleration_mg;
+
+    /* Mark settings as modified */
+    m_modified = true;
+    m_modified_timestamp = millis();
+
+    /* Return success */
+    return 0;
+}
+
+/**
  * @brief Get the total heating time in seconds
  * @param[out] seconds Total heating time in seconds
  * @return 1 if found, 0 if not found

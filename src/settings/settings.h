@@ -61,6 +61,8 @@ int settings_display_brightness_get(int &percent);
 int settings_display_brightness_set(const int percent);
 int settings_accelerometer_idle_duration_get(uint32_t &duration_ms);
 int settings_accelerometer_idle_duration_set(const uint32_t duration_ms);
+int settings_accelerometer_idle_acceleration_get(uint32_t &acceleration_mg);
+int settings_accelerometer_idle_acceleration_set(const uint32_t acceleration_mg);
 
 /* Diagnostics */
 int settings_diagnostics_heating_time_get(uint32_t &seconds);
