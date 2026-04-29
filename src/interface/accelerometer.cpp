@@ -196,7 +196,38 @@ int accelerometer_task(void) {
                 reg_fall_ths = 255;
             }
 
-            /* Configure the accelerometer */
+            /* Configure the LIS2DH12 accelerometer:
+             *
+             * CTRL_REG1 (0x20) = 0b01001111: ODR[3:0]=0100 → 50 Hz; LPen=1 → low-power mode (with HR=0
+             * in CTRL_REG4 this selects 8-bit output); Zen/Yen/Xen=1 → all axes enabled.
+             *
+             * CTRL_REG2 (0x21) = 0b00101010: HPM[1:0]=00 → high-pass normal mode (reference reset via
+             * REFERENCE read); HPCF[2:1]=10 → cutoff per Table 34; FDS=1 → filtered data to OUT_* and
+             * FIFO; HP_IA2=1 → HP filter on AOI path for INT2; HP_IA1=0 → HP filter off on AOI for INT1.
+             *
+             * CTRL_REG3 (0x22) = 0b01000000: I1_IA1=1 → route Interrupt 1 (IA1, configured via INT1_*)
+             * to the INT1 pin (free-fall signalling on INT1).
+             *
+             * CTRL_REG4 (0x23) = 0b10000000: BDU=1 → block data update (LSB/MSB pair not split across
+             * reads); FS[1:0]=00 → ±2 g full scale; HR=0 → matches low-power path from CTRL_REG1.
+             *
+             * CTRL_REG5 (0x24) = 0x00: defaults — FIFO off; interrupt latch / 4D options off.
+             *
+             * CTRL_REG6 (0x25) = 0b00001010: I2_ACT=1 → route sleep-to-wake / return-to-sleep (activity)
+             * signalling to INT2; INT_POLARITY=0 → INT1/INT2 active-high (datasheet Table 43).
+             *
+             * INT1_CFG (0x30) = 0b10010101: AOI=1, 6D=0 → AND combination of threshold events; XLIE,
+             * YLIE, ZLIE=1 — interrupt when X, Y and Z are simultaneously below their thresholds (typical
+             * free-fall pattern); XHIE/YHIE/ZHIE=0.
+             *
+             * INT1_THS (0x32): IA1 threshold from reg_fall_ths (1 LSB = 16 mg at ±2 g FS).
+             *
+             * INT1_DURATION (0x33): minimum IA1 event duration = N/ODR (here N=2 at 50 Hz → 40 ms).
+             *
+             * ACT_THS (0x3E): sleep-to-wake activation threshold from reg_act_ths (1 LSB = 16 mg @ ±2 g).
+             *
+             * ACT_DUR (0x3F), driver symbol INACT_DUR: sleep-to-wake / return-to-sleep duration from
+             * reg_act_dur (scaling vs ODR per datasheet Table 86). */
             res = 0;
             res |= m_accel.register_write(LIS2DH12_REGISTER_CTRL_REG1, 0b01001111);
             res |= m_accel.register_write(LIS2DH12_REGISTER_CTRL_REG2, 0b00101010);
