@@ -726,7 +726,74 @@ Sets the idle duration (milliseconds).
 
 ---
 
-### 20. `heating_time_get`
+### 20. `accelerometer_idle_acceleration_get`
+
+Retrieves **idle acceleration** (milli-g): motion **below** this level does not reset the inactivity timer.
+
+**C Function:** `int accelerometer_idle_acceleration_get(uint32_t &acceleration_mg)`
+
+**Request:**
+```json
+{"action": "accelerometer_idle_acceleration_get"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success",
+  "acceleration_mg": 160
+}
+```
+
+**Response Fields:**
+- `acceleration_mg` (uint32_t): Idle acceleration in milli-g (1 milli-g = 0.001 g)
+
+**Notes:**
+- Persisted as `preferences.accelerometer.idle_acceleration_mg`
+- Bounds: `CONFIG_ACCEL_IDLE_ACCELERATION_MIN` … `CONFIG_ACCEL_IDLE_ACCELERATION_MAX` in `accelerometer.h`
+- Values are quantized; use `accelerometer_idle_acceleration_step_get(uint32_t &step_mg)` for the step size in milli-g
+
+---
+
+### 21. `accelerometer_idle_acceleration_set`
+
+Sets idle acceleration (milli-g).
+
+**C Function:** `int accelerometer_idle_acceleration_set(const uint32_t acceleration_mg)`
+
+**Request:**
+```json
+{
+  "action": "accelerometer_idle_acceleration_set",
+  "acceleration_mg": 160
+}
+```
+
+**Arguments:**
+- `acceleration_mg` (number, required): Idle acceleration in milli-g; must be within min/max from `accelerometer.h`
+
+**Success Response:**
+```json
+{
+  "result": "success"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Idle acceleration too low!", "Idle acceleration too high!", "Failed to set idle acceleration!"]
+}
+```
+
+**Notes:**
+- Persisted as `preferences.accelerometer.idle_acceleration_mg`
+- The accelerometer is reconfigured on the next `accelerometer_task()` cycle after a successful set
+
+---
+
+### 22. `heating_time_get`
 
 Retrieves the total heating time (diagnostics data).
 
@@ -764,7 +831,7 @@ Retrieves the total heating time (diagnostics data).
 
 ---
 
-### 21. `usb_voltage_max_get`
+### 23. `usb_voltage_max_get`
 
 Retrieves the maximum USB voltage recorded (diagnostics data).
 
@@ -802,7 +869,7 @@ Retrieves the maximum USB voltage recorded (diagnostics data).
 
 ---
 
-### 22. `system_reboot`
+### 24. `system_reboot`
 
 Reboots the system (microcontroller reset).
 

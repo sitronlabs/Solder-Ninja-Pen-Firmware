@@ -16,7 +16,15 @@
 #ifndef CONFIG_ACCEL_IDLE_DURATION_DEFAULT
 #define CONFIG_ACCEL_IDLE_DURATION_DEFAULT 40000  //!< Time after which no movement of the device will be interpreted as inactivity (in milliseconds).
 #endif
-#define CONFIG_ACCEL_IDLE_ACCELERATION_THRESHOLD 0.160  //!< Threshold under which acceleration will not be registered as movement (in g, after high pass filter).
+#ifndef CONFIG_ACCEL_IDLE_ACCELERATION_MIN
+#define CONFIG_ACCEL_IDLE_ACCELERATION_MIN 16  //!< Minimum idle acceleration (milli-g); motion below this does not reset inactivity.
+#endif
+#ifndef CONFIG_ACCEL_IDLE_ACCELERATION_MAX
+#define CONFIG_ACCEL_IDLE_ACCELERATION_MAX 992  //!< Maximum idle acceleration (milli-g).
+#endif
+#ifndef CONFIG_ACCEL_IDLE_ACCELERATION_DEFAULT
+#define CONFIG_ACCEL_IDLE_ACCELERATION_DEFAULT 160  //!< Default idle acceleration (milli-g).
+#endif
 #define CONFIG_ACCEL_FALL_ACCELERATION_THRESHOLD 0.336  //!< Threshold under which acceleration will be considered as free-fall (in g, absolute).
 
 /* Setup */
@@ -25,6 +33,9 @@ int accelerometer_setup(void);
 /* Idle */
 int accelerometer_idle_duration_get(uint32_t &duration_ms);
 int accelerometer_idle_duration_set(const uint32_t duration_ms);
+int accelerometer_idle_acceleration_get(uint32_t &acceleration_mg);
+int accelerometer_idle_acceleration_set(const uint32_t acceleration_mg);
+int accelerometer_idle_acceleration_step_get(uint32_t &step_mg);
 int accelerometer_idle_clear(void);
 int accelerometer_idle_detected_get(void);
 
