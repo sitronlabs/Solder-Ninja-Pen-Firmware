@@ -25,15 +25,15 @@ int accelerometer_setup(void);
 /* Idle */
 uint32_t accelerometer_idle_time_get(void);
 int accelerometer_idle_time_set(const uint32_t time_ms);
-int accelerometer_idle_reset(void);
+int accelerometer_idle_clear(void);
 int accelerometer_idle_detected_get(void);
 
 /* Wake */
-int accelerometer_wake_reset(void);
+int accelerometer_wake_clear(void);
 int accelerometer_wake_detected_get(void);
 
 /* Freefall */
-int accelerometer_fall_reset(void);
+int accelerometer_fall_clear(void);
 int accelerometer_fall_detected_get(void);
 
 /* Task */

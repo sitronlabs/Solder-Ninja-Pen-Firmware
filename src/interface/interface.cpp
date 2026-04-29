@@ -175,15 +175,15 @@ int interface_task(void) {
 
     /* Handle accelerometer */
     if (accelerometer_wake_detected_get() > 0) {
-        accelerometer_wake_reset();
+        accelerometer_wake_clear();
         controller_wake(CONTROLLER_WAKE_REASON_MOTION);
     }
     if (accelerometer_idle_detected_get() > 0) {
-        accelerometer_idle_reset();
+        accelerometer_idle_clear();
         controller_sleep(CONTROLLER_SLEEP_REASON_MOTION);
     }
     if (accelerometer_fall_detected_get() > 0) {
-        accelerometer_fall_reset();
+        accelerometer_fall_clear();
         controller_lock(CONTROLLER_LOCK_REASON_FREFALL);
     }
 

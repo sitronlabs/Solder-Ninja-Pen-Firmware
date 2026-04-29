@@ -101,7 +101,7 @@ int accelerometer_idle_time_set(const uint32_t time_ms) {
  * @param
  * @return
  */
-int accelerometer_idle_reset(void) {
+int accelerometer_idle_clear(void) {
     m_idle_detected = false;
     return 0;
 }
@@ -120,7 +120,7 @@ int accelerometer_idle_detected_get(void) {
  * @param
  * @return
  */
-int accelerometer_wake_reset(void) {
+int accelerometer_wake_clear(void) {
     m_wake_detected = false;
     return 0;
 }
@@ -139,7 +139,7 @@ int accelerometer_wake_detected_get(void) {
  * @param
  * @return
  */
-int accelerometer_fall_reset(void) {
+int accelerometer_fall_clear(void) {
     m_fall_detected = false;
     return 0;
 }
