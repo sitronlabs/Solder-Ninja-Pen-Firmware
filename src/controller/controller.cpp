@@ -315,9 +315,9 @@ int controller_task(void) {
 
     /* Clear sleep inactivity override after a while */
     if (m_sleep_inactivity_override) {
-        uint32_t idle_time_ms = CONFIG_ACCEL_IDLE_TIME_DEFAULT;
-        settings_accelerometer_idle_time_get(idle_time_ms);
-        if ((millis() - m_sleep_inactivity_override_start) >= idle_time_ms) {
+        uint32_t idle_duration_ms = CONFIG_ACCEL_IDLE_DURATION_DEFAULT;
+        (void)settings_accelerometer_idle_duration_get(idle_duration_ms);
+        if ((millis() - m_sleep_inactivity_override_start) >= idle_duration_ms) {
             m_sleep_inactivity_override = false;
             if (controller_state_get() != CONTROLLER_STATE_ACTIVE) {
                 element_heating_disable();
