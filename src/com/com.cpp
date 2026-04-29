@@ -485,36 +485,37 @@ static int m_command_process(const char *const str, const size_t len) {
         Serial.println();
     }
 
-    /* Command to retrieve the accelerometer idle time */
-    else if (doc[F("action")] == F("accelerometer_idle_time_get")) {
+    /* Command to retrieve the accelerometer idle duration */
+    else if (doc[F("action")] == F("accelerometer_idle_duration_get")) {
 
-        /* Retrieve accelerometer idle time */
-        uint32_t time_ms = accelerometer_idle_time_get();
+        /* Retrieve accelerometer idle duration */
+        uint32_t duration_ms = 0;
+        (void)accelerometer_idle_duration_get(duration_ms);
         StaticJsonDocument<128> response;
         response["result"] = "success";
-        response["time_ms"] = time_ms;
+        response["duration_ms"] = duration_ms;
         serializeJson(response, Serial);
         Serial.println();
     }
 
-    /* Command to set the accelerometer idle time */
-    else if (doc[F("action")] == F("accelerometer_idle_time_set")) {
+    /* Command to set the accelerometer idle duration */
+    else if (doc[F("action")] == F("accelerometer_idle_duration_set")) {
 
         /* Retrieve and verify argument */
-        uint32_t time_ms = doc["time_ms"] | 0;
-        if (time_ms < CONFIG_ACCEL_IDLE_TIME_MIN) {
-            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle time too short!\"]}"));
+        uint32_t duration_ms = doc["duration_ms"] | 0;
+        if (duration_ms < CONFIG_ACCEL_IDLE_DURATION_MIN) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle duration too short!\"]}"));
             return 0;
         }
-        if (time_ms > CONFIG_ACCEL_IDLE_TIME_MAX) {
-            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle time too long!\"]}"));
+        if (duration_ms > CONFIG_ACCEL_IDLE_DURATION_MAX) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Idle duration too long!\"]}"));
             return 0;
         }
 
-        /* Set new idle time */
-        res = accelerometer_idle_time_set(time_ms);
+        /* Set new idle duration */
+        res = accelerometer_idle_duration_set(duration_ms);
         if (res < 0) {
-            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set idle time!\"]}"));
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set idle duration!\"]}"));
             return 0;
         }
 

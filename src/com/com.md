@@ -660,50 +660,50 @@ Unlocks the device (allows heating if in active state).
 
 ---
 
-### 18. `accelerometer_idle_time_get`
+### 18. `accelerometer_idle_duration_get`
 
-Retrieves the current accelerometer idle time setting (time after which no movement is interpreted as inactivity).
+Retrieves the current accelerometer idle duration setting: how long the device must stay below the idle acceleration level before inactivity is declared (milliseconds).
 
-**C Function:** `uint32_t accelerometer_idle_time_get(void)`
+**C Function:** `int accelerometer_idle_duration_get(uint32_t &duration_ms)`
 
 **Request:**
 ```json
-{"action": "accelerometer_idle_time_get"}
+{"action": "accelerometer_idle_duration_get"}
 ```
 
 **Success Response:**
 ```json
 {
   "result": "success",
-  "time_ms": 40000
+  "duration_ms": 40000
 }
 ```
 
 **Response Fields:**
-- `time_ms`: Idle time in milliseconds (uint32_t)
+- `duration_ms` (uint32_t): Idle duration in milliseconds
 
 **Notes:**
-- The idle time determines how long the device must remain still before it's considered inactive
-- Value is persisted in EEPROM settings
+- Persisted as `preferences.accelerometer.idle_duration_ms` in EEPROM
+- Valid range is `CONFIG_ACCEL_IDLE_DURATION_MIN` … `CONFIG_ACCEL_IDLE_DURATION_MAX` in `accelerometer.h`
 
 ---
 
-### 19. `accelerometer_idle_time_set`
+### 19. `accelerometer_idle_duration_set`
 
-Sets the accelerometer idle time (time after which no movement is interpreted as inactivity).
+Sets the idle duration (milliseconds).
 
-**C Function:** `int accelerometer_idle_time_set(const uint32_t time_ms)`
+**C Function:** `int accelerometer_idle_duration_set(const uint32_t duration_ms)`
 
 **Request:**
 ```json
 {
-  "action": "accelerometer_idle_time_set",
-  "time_ms": 30000
+  "action": "accelerometer_idle_duration_set",
+  "duration_ms": 40000
 }
 ```
 
 **Arguments:**
-- `time_ms` (number, required): Idle time in milliseconds (must be between 10000 and 40000)
+- `duration_ms` (number, required): Idle duration in milliseconds; must be within `CONFIG_ACCEL_IDLE_DURATION_MIN` and `CONFIG_ACCEL_IDLE_DURATION_MAX`
 
 **Success Response:**
 ```json
@@ -716,14 +716,13 @@ Sets the accelerometer idle time (time after which no movement is interpreted as
 ```json
 {
   "result": "failure",
-  "errors": ["Idle time too short!", "Idle time too long!", "Failed to set idle time!"]
+  "errors": ["Idle duration too short!", "Idle duration too long!", "Failed to set idle duration!"]
 }
 ```
 
 **Notes:**
-- Valid range: 10000 ms (10 seconds) to 40000 ms (40 seconds) as defined by `CONFIG_ACCEL_IDLE_TIME_MIN` and `CONFIG_ACCEL_IDLE_TIME_MAX`
-- The new value is persisted to EEPROM settings
-- Accelerometer will be reconfigured on the next task cycle
+- Persisted as `preferences.accelerometer.idle_duration_ms`
+- The accelerometer is reconfigured on the next `accelerometer_task()` cycle after a successful set
 
 ---
 

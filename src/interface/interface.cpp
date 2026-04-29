@@ -48,8 +48,8 @@ static enum {
     STATE_MENU_INTERFACE_ROTATION_1,
     STATE_MENU_DISPLAY_BRIGHTNESS_0,
     STATE_MENU_DISPLAY_BRIGHTNESS_1,
-    STATE_MENU_ACCELEROMETER_IDLE_TIME_0,
-    STATE_MENU_ACCELEROMETER_IDLE_TIME_1,
+    STATE_MENU_ACCELEROMETER_IDLE_DURATION_0,
+    STATE_MENU_ACCELEROMETER_IDLE_DURATION_1,
     STATE_MENU_UPDATE_0,
 } m_sm;
 
@@ -852,7 +852,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
-                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_TIME_0;
+                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_DURATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
@@ -925,7 +925,7 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_MENU_ACCELEROMETER_IDLE_TIME_0: {
+        case STATE_MENU_ACCELEROMETER_IDLE_DURATION_0: {
 
             /* Display menu page */
             m_library.clear();
@@ -934,7 +934,7 @@ int interface_task(void) {
             m_library.setCursor(20, 0);
             m_library.print("Settings");
             m_library.setCursor(20, 9);
-            m_library.print("Idle time");
+            m_library.print("Idle durat.");
             m_library.display();
 
             /* Handle buttons */
@@ -948,7 +948,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_TIME_1;
+                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_DURATION_1;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
@@ -964,59 +964,81 @@ int interface_task(void) {
             break;
         }
 
-        case STATE_MENU_ACCELEROMETER_IDLE_TIME_1: {
+        case STATE_MENU_ACCELEROMETER_IDLE_DURATION_1: {
 
             /* Retrieve relevant settings */
-            uint32_t idle_time_ms = accelerometer_idle_time_get();
+            uint32_t idle_duration_ms = 0;
+            (void)accelerometer_idle_duration_get(idle_duration_ms);
 
             /* Display menu page */
             m_library.clear();
             m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
             m_library.setTextSize(1);
             m_library.setCursor(20, 0);
-            m_library.print("Idle time");
+            m_library.print("Idle durat.");
             m_library.setCursor(20, 9);
-            m_library.printf("%lus", idle_time_ms / 1000);
+            if (idle_duration_ms >= 60000) {
+                m_library.printf("%lum%s", idle_duration_ms / 60000, (idle_duration_ms == CONFIG_ACCEL_IDLE_DURATION_DEFAULT) ? " (def)" : "");
+            } else {
+                m_library.printf("%lus%s", idle_duration_ms / 1000, (idle_duration_ms == CONFIG_ACCEL_IDLE_DURATION_DEFAULT) ? " (def)" : "");
+            }
             m_library.display();
 
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT: {
 
-                    /* Decrease idle time */
-                    if (idle_time_ms > CONFIG_ACCEL_IDLE_TIME_MIN) {
-                        idle_time_ms -= 5000;
+                    /* Decrease idle duration
+                     * 10s steps below 1 min, 1 min steps above
+                     * with rounding to nearest step */
+                    if (idle_duration_ms > 60000) {
+                        idle_duration_ms -= 60000;
+                        idle_duration_ms = 60000 * ((idle_duration_ms + 30000) / 60000);
+                    } else if (idle_duration_ms > 10000) {
+                        idle_duration_ms -= 10000;
+                        idle_duration_ms = 10000 * ((idle_duration_ms + 5000) / 10000);
                     }
 
-                    /* Round to nearest 5 seconds */
-                    idle_time_ms = 5000 * ((idle_time_ms + 2500) / 5000);
-                    if (idle_time_ms < CONFIG_ACCEL_IDLE_TIME_MIN) {
-                        idle_time_ms = CONFIG_ACCEL_IDLE_TIME_MIN;
+                    /* Cap value to min */
+                    if (idle_duration_ms < CONFIG_ACCEL_IDLE_DURATION_MIN) {
+                        idle_duration_ms = CONFIG_ACCEL_IDLE_DURATION_MIN;
                     }
 
-                    /* Set new idle time */
-                    accelerometer_idle_time_set(idle_time_ms);
+                    /* Set new idle duration */
+                    accelerometer_idle_duration_set(idle_duration_ms);
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
 
-                    /* Increment idle time */
-                    if (idle_time_ms < CONFIG_ACCEL_IDLE_TIME_MAX) {
-                        idle_time_ms += 5000;
+                    /* Increase idle duration
+                     * 10s steps below 1 min, 1 min steps above
+                     * with rounding to nearest step */
+                    if (idle_duration_ms >= 60000) {
+                        idle_duration_ms += 60000;
+                        idle_duration_ms = 60000 * ((idle_duration_ms + 30000) / 60000);
+                    } else if (idle_duration_ms >= 10000) {
+                        idle_duration_ms += 10000;
+                        idle_duration_ms = 10000 * ((idle_duration_ms + 5000) / 10000);
                     }
 
-                    /* Round to nearest 5 seconds */
-                    idle_time_ms = 5000 * ((idle_time_ms + 2500) / 5000);
-                    if (idle_time_ms > CONFIG_ACCEL_IDLE_TIME_MAX) {
-                        idle_time_ms = CONFIG_ACCEL_IDLE_TIME_MAX;
+                    /* Cap value to max */
+                    if (idle_duration_ms > CONFIG_ACCEL_IDLE_DURATION_MAX) {
+                        idle_duration_ms = CONFIG_ACCEL_IDLE_DURATION_MAX;
                     }
 
-                    /* Set new idle time */
-                    accelerometer_idle_time_set(idle_time_ms);
+                    /* Set new idle duration */
+                    accelerometer_idle_duration_set(idle_duration_ms);
+                    break;
+                }
+                case BUTTONS_EVENT_LEFT_LONG:
+                case BUTTONS_EVENT_RIGHT_LONG: {
+
+                    /* Reset to default */
+                    accelerometer_idle_duration_set(CONFIG_ACCEL_IDLE_DURATION_DEFAULT);
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
-                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_TIME_0;
+                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_DURATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_LONG: {
@@ -1047,7 +1069,7 @@ int interface_task(void) {
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT: {
-                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_TIME_0;
+                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_DURATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
