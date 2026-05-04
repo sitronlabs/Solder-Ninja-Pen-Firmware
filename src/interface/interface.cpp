@@ -52,6 +52,10 @@ static enum {
     STATE_MENU_ACCELEROMETER_IDLE_DURATION_1,
     STATE_MENU_ACCELEROMETER_IDLE_ACCELERATION_0,
     STATE_MENU_ACCELEROMETER_IDLE_ACCELERATION_1,
+    STATE_MENU_ACCELEROMETER_FALL_DURATION_0,
+    STATE_MENU_ACCELEROMETER_FALL_DURATION_1,
+    STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_0,
+    STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_1,
     STATE_MENU_UPDATE_0,
 } m_sm;
 
@@ -1075,7 +1079,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
-                    m_sm = STATE_MENU_UPDATE_0;
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_DURATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
@@ -1166,6 +1170,212 @@ int interface_task(void) {
             break;
         }
 
+        case STATE_MENU_ACCELEROMETER_FALL_DURATION_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Fall durat.");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_ACCELERATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_DURATION_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_MENU_ACCELEROMETER_FALL_DURATION_1: {
+
+            /* Retrieve relevant settings */
+            uint32_t fall_duration_ms = 0;
+            (void)accelerometer_fall_duration_get(fall_duration_ms);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Fall durat.");
+            m_library.setCursor(20, 9);
+            m_library.printf("%lums%s", (unsigned long)fall_duration_ms, (fall_duration_ms == CONFIG_ACCEL_FALL_DURATION_DEFAULT_MS) ? " (def)" : "");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+
+                    /* Decrease freefall duration */
+                    uint32_t step_ms = 0;
+                    (void)accelerometer_fall_duration_step_get(step_ms);
+                    if (fall_duration_ms > step_ms) {
+                        fall_duration_ms -= step_ms;
+                    }
+                    if (fall_duration_ms < CONFIG_ACCEL_FALL_DURATION_MIN_MS) {
+                        fall_duration_ms = CONFIG_ACCEL_FALL_DURATION_MIN_MS;
+                    }
+
+                    /* Set new freefall duration */
+                    (void)accelerometer_fall_duration_set(fall_duration_ms);
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+
+                    /* Increase freefall duration */
+                    uint32_t step_ms = 0;
+                    (void)accelerometer_fall_duration_step_get(step_ms);
+                    fall_duration_ms += step_ms;
+                    if (fall_duration_ms > CONFIG_ACCEL_FALL_DURATION_MAX_MS) {
+                        fall_duration_ms = CONFIG_ACCEL_FALL_DURATION_MAX_MS;
+                    }
+
+                    /* Set new freefall duration */
+                    (void)accelerometer_fall_duration_set(fall_duration_ms);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_DURATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+
+            break;
+        }
+
+        case STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Fall accel.");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_DURATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_UPDATE_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+
+            /* That's it */
+            break;
+        }
+
+        case STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_1: {
+
+            /* Retrieve relevant settings */
+            uint32_t fall_acceleration_mg = 0;
+            (void)accelerometer_fall_acceleration_get(fall_acceleration_mg);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Fall accel.");
+            m_library.setCursor(20, 9);
+            m_library.printf("%lumg%s", (unsigned long)fall_acceleration_mg, (fall_acceleration_mg == CONFIG_ACCEL_FALL_ACCELERATION_DEFAULT) ? " (def)" : "");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+
+                    /* Decrease freefall acceleration threshold */
+                    uint32_t step_mg = 0;
+                    (void)accelerometer_fall_acceleration_step_get(step_mg);
+                    if (fall_acceleration_mg > step_mg) {
+                        fall_acceleration_mg -= step_mg;
+                    }
+                    if (fall_acceleration_mg < CONFIG_ACCEL_FALL_ACCELERATION_MIN) {
+                        fall_acceleration_mg = CONFIG_ACCEL_FALL_ACCELERATION_MIN;
+                    }
+
+                    /* Set new freefall acceleration threshold */
+                    (void)accelerometer_fall_acceleration_set(fall_acceleration_mg);
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+
+                    /* Increase freefall acceleration threshold */
+                    uint32_t step_mg = 0;
+                    (void)accelerometer_fall_acceleration_step_get(step_mg);
+                    fall_acceleration_mg += step_mg;
+                    if (fall_acceleration_mg > CONFIG_ACCEL_FALL_ACCELERATION_MAX) {
+                        fall_acceleration_mg = CONFIG_ACCEL_FALL_ACCELERATION_MAX;
+                    }
+
+                    /* Set new freefall acceleration threshold */
+                    (void)accelerometer_fall_acceleration_set(fall_acceleration_mg);
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+
+            break;
+        }
+
         case STATE_MENU_UPDATE_0: {
 
             /* Display menu page */
@@ -1181,7 +1391,7 @@ int interface_task(void) {
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT: {
-                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_ACCELERATION_0;
+                    m_sm = STATE_MENU_ACCELEROMETER_FALL_ACCELERATION_0;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {

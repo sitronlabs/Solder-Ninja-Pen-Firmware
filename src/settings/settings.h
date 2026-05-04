@@ -63,6 +63,10 @@ int settings_accelerometer_idle_duration_get(uint32_t &duration_ms);
 int settings_accelerometer_idle_duration_set(const uint32_t duration_ms);
 int settings_accelerometer_idle_acceleration_get(uint32_t &acceleration_mg);
 int settings_accelerometer_idle_acceleration_set(const uint32_t acceleration_mg);
+int settings_accelerometer_fall_duration_get(uint32_t &duration_ms);
+int settings_accelerometer_fall_duration_set(const uint32_t duration_ms);
+int settings_accelerometer_fall_acceleration_get(uint32_t &acceleration_mg);
+int settings_accelerometer_fall_acceleration_set(const uint32_t acceleration_mg);
 
 /* Diagnostics */
 int settings_diagnostics_heating_time_get(uint32_t &seconds);

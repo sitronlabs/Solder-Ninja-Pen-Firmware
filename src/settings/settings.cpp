@@ -1459,6 +1459,76 @@ int settings_accelerometer_idle_acceleration_set(const uint32_t acceleration_mg)
 }
 
 /**
+ * @brief Gets the accelerometer freefall duration (milliseconds)
+ * @param[out] duration_ms Freefall duration (in milliseconds)
+ * @return 1 if setting was found, 0 if not found (use default)
+ */
+int settings_accelerometer_fall_duration_get(uint32_t &duration_ms) {
+
+    /* Return if found */
+    if (m_doc["preferences"]["accelerometer"]["fall_duration_ms"].is<uint32_t>() == true) {
+        duration_ms = m_doc["preferences"]["accelerometer"]["fall_duration_ms"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief Sets the accelerometer freefall duration (milliseconds)
+ * @param[in] duration_ms Freefall duration (in milliseconds)
+ * @return 0 on success
+ */
+int settings_accelerometer_fall_duration_set(const uint32_t duration_ms) {
+
+    /* Update json document */
+    m_doc["preferences"]["accelerometer"]["fall_duration_ms"] = duration_ms;
+
+    /* Mark settings as modified */
+    m_modified = true;
+    m_modified_timestamp = millis();
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Gets the accelerometer freefall acceleration threshold (milli-g)
+ * @param[out] acceleration_mg Freefall acceleration (milli-g)
+ * @return 1 if setting was found, 0 if not found (use default)
+ */
+int settings_accelerometer_fall_acceleration_get(uint32_t &acceleration_mg) {
+
+    /* Return if found */
+    if (m_doc["preferences"]["accelerometer"]["fall_acceleration_mg"].is<uint32_t>() == true) {
+        acceleration_mg = m_doc["preferences"]["accelerometer"]["fall_acceleration_mg"];
+        return 1;
+    }
+
+    /* Return not found */
+    return 0;
+}
+
+/**
+ * @brief Sets the accelerometer freefall acceleration threshold (milli-g)
+ * @param[in] acceleration_mg Freefall acceleration (milli-g)
+ * @return 0 on success
+ */
+int settings_accelerometer_fall_acceleration_set(const uint32_t acceleration_mg) {
+
+    /* Update json document */
+    m_doc["preferences"]["accelerometer"]["fall_acceleration_mg"] = acceleration_mg;
+
+    /* Mark settings as modified */
+    m_modified = true;
+    m_modified_timestamp = millis();
+
+    /* Return success */
+    return 0;
+}
+
+/**
  * @brief Get the total heating time in seconds
  * @param[out] seconds Total heating time in seconds
  * @return 1 if found, 0 if not found

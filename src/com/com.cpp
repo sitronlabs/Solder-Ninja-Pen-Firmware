@@ -561,6 +561,82 @@ static int m_command_process(const char *const str, const size_t len) {
         Serial.println(F("{\"result\":\"success\"}"));
     }
 
+    /* Command to retrieve the accelerometer freefall duration (ms) */
+    else if (doc[F("action")] == F("accelerometer_fall_duration_get")) {
+
+        /* Retrieve accelerometer freefall duration */
+        uint32_t duration_ms = 0;
+        (void)accelerometer_fall_duration_get(duration_ms);
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["duration_ms"] = duration_ms;
+        serializeJson(response, Serial);
+        Serial.println();
+    }
+
+    /* Command to set the accelerometer freefall duration (ms) */
+    else if (doc[F("action")] == F("accelerometer_fall_duration_set")) {
+
+        /* Retrieve and verify argument */
+        const uint32_t duration_ms = doc["duration_ms"] | 0;
+        if (duration_ms < CONFIG_ACCEL_FALL_DURATION_MIN_MS) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Freefall duration too short!\"]}"));
+            return 0;
+        }
+        if (duration_ms > CONFIG_ACCEL_FALL_DURATION_MAX_MS) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Freefall duration too long!\"]}"));
+            return 0;
+        }
+
+        /* Set new freefall duration */
+        res = accelerometer_fall_duration_set(duration_ms);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set freefall duration!\"]}"));
+            return 0;
+        }
+
+        /* Report success */
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
+    /* Command to retrieve the accelerometer freefall acceleration (milli-g) */
+    else if (doc[F("action")] == F("accelerometer_fall_acceleration_get")) {
+
+        /* Retrieve accelerometer freefall acceleration threshold */
+        uint32_t fall_acceleration_mg = 0;
+        (void)accelerometer_fall_acceleration_get(fall_acceleration_mg);
+        StaticJsonDocument<128> response;
+        response["result"] = "success";
+        response["acceleration_mg"] = fall_acceleration_mg;
+        serializeJson(response, Serial);
+        Serial.println();
+    }
+
+    /* Command to set the accelerometer freefall acceleration (milli-g) */
+    else if (doc[F("action")] == F("accelerometer_fall_acceleration_set")) {
+
+        /* Retrieve and verify argument */
+        const uint32_t fall_acceleration_mg = doc["acceleration_mg"] | 0;
+        if (fall_acceleration_mg < CONFIG_ACCEL_FALL_ACCELERATION_MIN) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Freefall acceleration too low!\"]}"));
+            return 0;
+        }
+        if (fall_acceleration_mg > CONFIG_ACCEL_FALL_ACCELERATION_MAX) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Freefall acceleration too high!\"]}"));
+            return 0;
+        }
+
+        /* Set new freefall acceleration threshold */
+        res = accelerometer_fall_acceleration_set(fall_acceleration_mg);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to set freefall acceleration!\"]}"));
+            return 0;
+        }
+
+        /* Report success */
+        Serial.println(F("{\"result\":\"success\"}"));
+    }
+
     /* Command to get heating time */
     else if (doc[F("action")] == F("heating_time_get")) {
         uint32_t heating_time = 0;
