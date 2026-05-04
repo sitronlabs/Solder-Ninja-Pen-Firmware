@@ -793,7 +793,141 @@ Sets idle acceleration (milli-g).
 
 ---
 
-### 22. `heating_time_get`
+### 22. `accelerometer_fall_duration_get`
+
+Retrieves the current accelerometer freefall duration setting: how long the freefall pattern must persist before detection (milliseconds).
+
+**C Function:** `int accelerometer_fall_duration_get(uint32_t &duration_ms)`
+
+**Request:**
+```json
+{"action": "accelerometer_fall_duration_get"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success",
+  "duration_ms": 40
+}
+```
+
+**Response Fields:**
+- `duration_ms` (uint32_t): Freefall duration in milliseconds
+
+**Notes:**
+- Persisted as `preferences.accelerometer.fall_duration_ms` in EEPROM
+- Valid range is `CONFIG_ACCEL_FALL_DURATION_MIN_MS` … `CONFIG_ACCEL_FALL_DURATION_MAX_MS` in `accelerometer.h`
+- Values are quantized; use `accelerometer_fall_duration_step_get(uint32_t &step_ms)` for the step size in milliseconds
+
+---
+
+### 23. `accelerometer_fall_duration_set`
+
+Sets the freefall duration (milliseconds).
+
+**C Function:** `int accelerometer_fall_duration_set(const uint32_t duration_ms)`
+
+**Request:**
+```json
+{
+  "action": "accelerometer_fall_duration_set",
+  "duration_ms": 40
+}
+```
+
+**Arguments:**
+- `duration_ms` (number, required): Freefall duration in milliseconds; must be within `CONFIG_ACCEL_FALL_DURATION_MIN_MS` and `CONFIG_ACCEL_FALL_DURATION_MAX_MS`
+
+**Success Response:**
+```json
+{
+  "result": "success"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Freefall duration too short!", "Freefall duration too long!", "Failed to set freefall duration!"]
+}
+```
+
+**Notes:**
+- Persisted as `preferences.accelerometer.fall_duration_ms`
+- The accelerometer is reconfigured on the next `accelerometer_task()` cycle after a successful set
+
+---
+
+### 24. `accelerometer_fall_acceleration_get`
+
+Retrieves **freefall acceleration** (milli-g): all axes simultaneously below this threshold indicates a free-fall condition.
+
+**C Function:** `int accelerometer_fall_acceleration_get(uint32_t &acceleration_mg)`
+
+**Request:**
+```json
+{"action": "accelerometer_fall_acceleration_get"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success",
+  "acceleration_mg": 336
+}
+```
+
+**Response Fields:**
+- `acceleration_mg` (uint32_t): Freefall acceleration in milli-g (1 milli-g = 0.001 g)
+
+**Notes:**
+- Persisted as `preferences.accelerometer.fall_acceleration_mg`
+- Bounds: `CONFIG_ACCEL_FALL_ACCELERATION_MIN` … `CONFIG_ACCEL_FALL_ACCELERATION_MAX` in `accelerometer.h`
+- Values are quantized; use `accelerometer_fall_acceleration_step_get(uint32_t &step_mg)` for the step size in milli-g
+
+---
+
+### 25. `accelerometer_fall_acceleration_set`
+
+Sets the freefall acceleration threshold (milli-g).
+
+**C Function:** `int accelerometer_fall_acceleration_set(const uint32_t acceleration_mg)`
+
+**Request:**
+```json
+{
+  "action": "accelerometer_fall_acceleration_set",
+  "acceleration_mg": 336
+}
+```
+
+**Arguments:**
+- `acceleration_mg` (number, required): Freefall acceleration in milli-g; must be within min/max from `accelerometer.h`
+
+**Success Response:**
+```json
+{
+  "result": "success"
+}
+```
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Freefall acceleration too low!", "Freefall acceleration too high!", "Failed to set freefall acceleration!"]
+}
+```
+
+**Notes:**
+- Persisted as `preferences.accelerometer.fall_acceleration_mg`
+- The accelerometer is reconfigured on the next `accelerometer_task()` cycle after a successful set
+
+---
+
+### 26. `heating_time_get`
 
 Retrieves the total heating time (diagnostics data).
 
@@ -831,7 +965,7 @@ Retrieves the total heating time (diagnostics data).
 
 ---
 
-### 23. `usb_voltage_max_get`
+### 27. `usb_voltage_max_get`
 
 Retrieves the maximum USB voltage recorded (diagnostics data).
 
@@ -869,7 +1003,7 @@ Retrieves the maximum USB voltage recorded (diagnostics data).
 
 ---
 
-### 24. `system_reboot`
+### 28. `system_reboot`
 
 Reboots the system (microcontroller reset).
 

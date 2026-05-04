@@ -29,7 +29,9 @@ static uint32_t m_idle_duration_full_ms;             //!< Total idle duration (h
 static uint32_t m_idle_acceleration_mg;              //!< Idle acceleration (milli-g); HP-path motion below this does not reset inactivity
 
 /* Variables for freefall detection */
-static volatile bool m_fall_detected;  //!< Set to true when freefall is detected by the accelerometer IC
+static volatile bool m_fall_detected;    //!< Set to true when freefall is detected by the accelerometer IC
+static uint32_t m_fall_acceleration_mg;  //!< Freefall threshold (milli-g) for INT1_THS
+static uint32_t m_fall_duration_ms;      //!< IA1 minimum duration in ms (quantized to ODR sample periods)
 
 /**
  * @brief
@@ -78,6 +80,30 @@ int accelerometer_setup(void) {
             m_idle_acceleration_mg = CONFIG_ACCEL_IDLE_ACCELERATION_MIN;
         } else if (m_idle_acceleration_mg > CONFIG_ACCEL_IDLE_ACCELERATION_MAX) {
             m_idle_acceleration_mg = CONFIG_ACCEL_IDLE_ACCELERATION_MAX;
+        }
+    }
+
+    /* Retrieve freefall duration from settings and fallback to default if not found */
+    res = settings_accelerometer_fall_duration_get(m_fall_duration_ms);
+    if (res <= 0) {
+        m_fall_duration_ms = CONFIG_ACCEL_FALL_DURATION_DEFAULT_MS;
+    } else {
+        if (m_fall_duration_ms < CONFIG_ACCEL_FALL_DURATION_MIN_MS) {
+            m_fall_duration_ms = CONFIG_ACCEL_FALL_DURATION_MIN_MS;
+        } else if (m_fall_duration_ms > CONFIG_ACCEL_FALL_DURATION_MAX_MS) {
+            m_fall_duration_ms = CONFIG_ACCEL_FALL_DURATION_MAX_MS;
+        }
+    }
+
+    /* Retrieve freefall acceleration threshold from settings and fallback to default if not found */
+    res = settings_accelerometer_fall_acceleration_get(m_fall_acceleration_mg);
+    if (res <= 0) {
+        m_fall_acceleration_mg = CONFIG_ACCEL_FALL_ACCELERATION_DEFAULT;
+    } else {
+        if (m_fall_acceleration_mg < CONFIG_ACCEL_FALL_ACCELERATION_MIN) {
+            m_fall_acceleration_mg = CONFIG_ACCEL_FALL_ACCELERATION_MIN;
+        } else if (m_fall_acceleration_mg > CONFIG_ACCEL_FALL_ACCELERATION_MAX) {
+            m_fall_acceleration_mg = CONFIG_ACCEL_FALL_ACCELERATION_MAX;
         }
     }
 
@@ -168,6 +194,98 @@ int accelerometer_idle_acceleration_set(const uint32_t acceleration_mg) {
  * @return 0 always
  */
 int accelerometer_idle_acceleration_step_get(uint32_t &step_mg) {
+    step_mg = k_idle_acceleration_step_mg;
+    return 0;
+}
+
+/**
+ * @brief Get freefall IA1 minimum event duration (ms), quantized to ODR sample periods.
+ * @param[out] duration_ms Freefall duration (in milliseconds)
+ * @return 0 always
+ */
+int accelerometer_fall_duration_get(uint32_t &duration_ms) {
+    duration_ms = m_fall_duration_ms;
+    return 0;
+}
+
+/**
+ * @brief Set freefall IA1 minimum duration and trigger reconfiguration
+ * @param[in] duration_ms Freefall duration in milliseconds
+ * @return 0 on success, -EINVAL if out of range
+ */
+int accelerometer_fall_duration_set(const uint32_t duration_ms) {
+
+    /* Ensure value is valid */
+    if ((duration_ms < CONFIG_ACCEL_FALL_DURATION_MIN_MS) || (duration_ms > CONFIG_ACCEL_FALL_DURATION_MAX_MS)) {
+        log_e("Invalid freefall duration!");
+        return -EINVAL;
+    }
+
+    /* Update the cached value */
+    m_fall_duration_ms = duration_ms;
+
+    /* Flag accelerometer for reconfiguration (will be handled by accelerometer_task()) */
+    m_chip_reconfigure_needed = true;
+
+    /* Persist the new value to settings storage */
+    settings_accelerometer_fall_duration_set(m_fall_duration_ms);
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Milli-seconds per INT1_DURATION LSB (one sample period at CONFIG_ACCEL_ODR_HZ).
+ * @param[out] step_ms Step (milliseconds)
+ * @return 0 always
+ */
+int accelerometer_fall_duration_step_get(uint32_t &step_ms) {
+    step_ms = 1000u / (uint32_t)CONFIG_ACCEL_ODR_HZ;
+    return 0;
+}
+
+/**
+ * @brief Get freefall acceleration threshold (milli-g) for INT1_THS.
+ * @param[out] acceleration_mg Freefall acceleration (milli-g)
+ * @return 0 always
+ */
+int accelerometer_fall_acceleration_get(uint32_t &acceleration_mg) {
+    acceleration_mg = m_fall_acceleration_mg;
+    return 0;
+}
+
+/**
+ * @brief Set freefall acceleration threshold (milli-g) and trigger reconfiguration.
+ * @param[in] acceleration_mg Freefall acceleration (milli-g)
+ * @return 0 on success, -EINVAL if out of range
+ */
+int accelerometer_fall_acceleration_set(const uint32_t acceleration_mg) {
+
+    /* Ensure value is valid */
+    if ((acceleration_mg < CONFIG_ACCEL_FALL_ACCELERATION_MIN) || (acceleration_mg > CONFIG_ACCEL_FALL_ACCELERATION_MAX)) {
+        log_e("Invalid freefall acceleration!");
+        return -EINVAL;
+    }
+
+    /* Update the cached value */
+    m_fall_acceleration_mg = acceleration_mg;
+
+    /* Flag accelerometer for reconfiguration (will be handled by accelerometer_task()) */
+    m_chip_reconfigure_needed = true;
+
+    /* Persist the new value to settings storage */
+    settings_accelerometer_fall_acceleration_set(m_fall_acceleration_mg);
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Milli-g per INT1_THS LSB at current full scale (same step as idle ACT_THS).
+ * @param[out] step_mg Step (milli-g)
+ * @return 0 always
+ */
+int accelerometer_fall_acceleration_step_get(uint32_t &step_mg) {
     step_mg = k_idle_acceleration_step_mg;
     return 0;
 }
@@ -290,11 +408,17 @@ int accelerometer_task(void) {
             } else if (reg_act_ths > 255) {
                 reg_act_ths = 255;
             }
-            float reg_fall_ths = (1000.0f * (float)CONFIG_ACCEL_FALL_ACCELERATION_THRESHOLD) / (float)k_idle_acceleration_step_mg;
+            float reg_fall_ths = (float)m_fall_acceleration_mg / (float)k_idle_acceleration_step_mg;
             if (reg_fall_ths < 0) {
                 reg_fall_ths = 1;
             } else if (reg_fall_ths > 255) {
                 reg_fall_ths = 255;
+            }
+            uint32_t reg_int1_duration = m_fall_duration_ms / (1000u / (uint32_t)CONFIG_ACCEL_ODR_HZ);
+            if (reg_int1_duration < 1u) {
+                reg_int1_duration = 1u;
+            } else if (reg_int1_duration > 255u) {
+                reg_int1_duration = 255u;
             }
 
             /* Configure the LIS2DH12 accelerometer:
@@ -323,7 +447,7 @@ int accelerometer_task(void) {
              *
              * INT1_THS (0x32): IA1 threshold from reg_fall_ths (1 LSB = 16 mg at ±2 g FS).
              *
-             * INT1_DURATION (0x33): minimum IA1 event duration = N/ODR (here N=2 at 50 Hz → 40 ms).
+             * INT1_DURATION (0x33): minimum IA1 event duration = N/ODR (reg_int1_duration samples).
              *
              * ACT_THS (0x3E): sleep-to-wake activation threshold from reg_act_ths (1 LSB = 16 mg @ ±2 g).
              *
@@ -338,7 +462,7 @@ int accelerometer_task(void) {
             res |= m_chip.register_write(LIS2DH12_REGISTER_CTRL_REG6, 0b00001010);
             res |= m_chip.register_write(LIS2DH12_REGISTER_INT1_CFG, 0b10010101);
             res |= m_chip.register_write(LIS2DH12_REGISTER_INT1_THS, reg_fall_ths);
-            res |= m_chip.register_write(LIS2DH12_REGISTER_INT1_DURATION, 2);
+            res |= m_chip.register_write(LIS2DH12_REGISTER_INT1_DURATION, reg_int1_duration);
             res |= m_chip.register_write(LIS2DH12_REGISTER_ACT_THS, reg_act_ths);
             res |= m_chip.register_write(LIS2DH12_REGISTER_INACT_DUR, reg_act_dur);
             if (res != 0) {
