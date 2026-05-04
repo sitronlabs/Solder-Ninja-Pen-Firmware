@@ -620,6 +620,7 @@ int power_task(void) {
                 .voltage_min = 5.0f,
                 .voltage_max = 5.0f,
                 .current_max = current,
+                .power_max = 5.0f * current,
             };
             m_options_add(option);
 
@@ -951,6 +952,7 @@ int power_task(void) {
                         .voltage_min = m_pd_voltage,
                         .voltage_max = m_pd_voltage,
                         .current_max = m_pd_current,
+                        .power_max = m_pd_voltage * m_pd_current,
                     };
                     m_options_add(option);
 
@@ -1282,6 +1284,7 @@ int power_task(void) {
                 .voltage_min = 5.0f,
                 .voltage_max = 5.0f,
                 .current_max = current,
+                .power_max = 5.0f * current,
             };
             m_options_add(option);
 
@@ -1443,6 +1446,7 @@ int power_task(void) {
                 .voltage_min = 12.0,
                 .voltage_max = 12.0,
                 .current_max = 1.5,
+                .power_max = 12.0f * 1.5f,
             };
             m_options_add(option);
 
@@ -1501,6 +1505,7 @@ int power_task(void) {
                 .voltage_min = 9.0,
                 .voltage_max = 9.0,
                 .current_max = 2.0,
+                .power_max = 9.0f * 2.0f,
             };
             m_options_add(option);
 

@@ -69,14 +69,6 @@ static int m_buffer_append(const char *data, size_t len) {
 }
 
 /**
- * @brief Get the number of bytes remaining in the buffer
- * @return Number of bytes that can be written before buffer is full
- */
-static size_t m_buffer_bytes_remaining(void) {
-    return CONFIG_LOG_BUFFER_SIZE - m_buffer_count;
-}
-
-/**
  * @brief Get the number of bytes currently in the buffer
  * @return Number of bytes that have been written to the buffer
  */
@@ -191,7 +183,7 @@ int log_task(void) {
     /* If buffer is empty and we have previously missed data, report it */
     if ((m_buffer_bytes_used() == 0) && (m_log_missed > 0)) {
         char missed_msg[128];
-        int msg_len = snprintf(missed_msg, sizeof(missed_msg), "[%" PRIu32 "] [wrn] [log.cpp:%u] %u log entries missed due to buffer overflow!\r\n", millis(), __LINE__, m_log_missed);
+        int msg_len = snprintf(missed_msg, sizeof(missed_msg), "[%" PRIu32 "] [wrn] [log.cpp:%u] %" PRIu32 " log entries missed due to buffer overflow!\r\n", millis(), __LINE__, m_log_missed);
 
         /* Try to append the missed message to buffer
          * If buffer is still full, the missed message itself will be lost, but the counter will remain for next time */
