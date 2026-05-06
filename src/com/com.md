@@ -803,7 +803,48 @@ Retrieves the maximum USB voltage recorded (diagnostics data).
 
 ---
 
-### 22. `system_reboot`
+### 22. `interface_display_capture`
+
+Captures the current OLED display framebuffer (SSD1306 page layout).
+
+**C Function:** `int interface_display_capture(const uint8_t *&framebuffer)`
+
+**Request:**
+```json
+{"action": "interface_display_capture"}
+```
+
+**Success Response:**
+```json
+{
+  "result": "success",
+  "width": 96,
+  "height": 16,
+  "data": [0, 255, 128, ...]
+}
+```
+
+**Response Fields:**
+- `width`: Display width in pixels (integer)
+- `height`: Display height in pixels (integer)
+- `data`: Framebuffer bytes as an array of uint8 values (length = width * height / 8)
+
+**Failure Response:**
+```json
+{
+  "result": "failure",
+  "errors": ["Failed to read display framebuffer!"]
+}
+```
+
+**Notes:**
+- The framebuffer uses the SSD1306 page layout: each byte represents 8 vertical pixels (LSB at the top of the page)
+- The display is 96×16, so 2 pages of 96 bytes each = 192 bytes total
+- The data reflects whatever was last drawn by `interface_task`; if the UI redraws between capture and transmission, only the state at the time of the call is returned
+
+---
+
+### 23. `system_reboot`
 
 Reboots the system (microcontroller reset).
 
@@ -899,4 +940,10 @@ Response: {"result":"success","temperature_c":350.0}
 ```json
 Request:  {"action": "controller_status_get"}
 Response: {"result":"success","state":"active","temperature":{"target":350.0,"measured":345.2},"boost":false,"element":[{"connected":true,"temperature":345.2}]}
+```
+
+### Capture Display
+```json
+Request:  {"action": "interface_display_capture"}
+Response: {"result":"success","width":96,"height":16,"data":[0,0,0,128,192,...]}
 ```
