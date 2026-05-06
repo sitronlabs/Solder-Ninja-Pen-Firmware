@@ -25,7 +25,7 @@
 
 /* Local variables */
 static ssd1306 m_library(CONFIG_UI_DISPLAY_WIDTH, CONFIG_UI_DISPLAY_HEIGHT);
-static uint8_t m_buffer[CONFIG_UI_DISPLAY_WIDTH * CONFIG_UI_DISPLAY_HEIGHT / 8];
+static uint8_t m_buffer[CONFIG_UI_DISPLAY_FRAMEBUFFER_BYTES];
 static uint32_t m_timestamp;
 static enum {
     STATE_SPLASH_0,
@@ -115,6 +115,26 @@ int interface_setup(void) {
         log_e("Failed to detect display panel!");
         return -ERROR_PERIPHERAL_NOT_DETECTED;
     }
+
+    /* Return success */
+    return 0;
+}
+
+/**
+ * @brief Read-only pointer to the live SSD1306 framebuffer
+ *
+ * On success, @p framebuffer points at @ref CONFIG_UI_DISPLAY_FRAMEBUFFER_BYTES bytes
+ * (driver page layout). That pointer stays valid for the program lifetime; the bytes are
+ * overwritten whenever the UI redraws (@ref interface_task) — copy first if you need a
+ * stable snapshot across further UI updates.
+ *
+ * @param[out] framebuffer Receives the framebuffer address (caller must pass an lvalue)
+ * @return 0 on success (reserved for future error conditions)
+ */
+int interface_display_capture(const uint8_t *&framebuffer) {
+
+    /* Pass framebuffer */
+    framebuffer = m_buffer;
 
     /* Return success */
     return 0;

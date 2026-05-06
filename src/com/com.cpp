@@ -6,12 +6,14 @@
 #include "controller/controller.h"
 #include "element/element.h"
 #include "interface/accelerometer.h"
+#include "interface/interface.h"
 #include "log/log.h"
 #include "settings/settings.h"
 
 /* Arduino libraries */
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <inttypes.h>
 
 /**
  * @brief Initialize serial communication interface
@@ -550,6 +552,29 @@ static int m_command_process(const char *const str, const size_t len) {
         } else {
             Serial.println(F("{\"result\":\"failure\", \"errors\":[\"No USB voltage data!\"]}"));
         }
+    }
+
+    /* Command to read the live OLED framebuffer (SSD1306 page buffer) */
+    else if (doc[F("action")] == F("interface_display_capture")) {
+
+        /* Retrieve readonly pointer to the live SSD1306 framebuffer */
+        const uint8_t *framebuffer = nullptr;
+        res = interface_display_capture(framebuffer);
+        if (res < 0) {
+            Serial.println(F("{\"result\":\"failure\", \"errors\":[\"Failed to read display framebuffer!\"]}"));
+            return 0;
+        }
+
+        /* Build and send response */
+        Serial.printf("{\"result\":\"success\",\"width\":%u,\"height\":%u,\"data\":[", (unsigned)CONFIG_UI_DISPLAY_WIDTH, (unsigned)CONFIG_UI_DISPLAY_HEIGHT);
+        for (size_t i = 0; i < CONFIG_UI_DISPLAY_FRAMEBUFFER_BYTES; i++) {
+            if (i == 0) {
+                Serial.printf("%" PRIu8, framebuffer[i]);
+            } else {
+                Serial.printf(",%" PRIu8, framebuffer[i]);
+            }
+        }
+        Serial.println("]}");
     }
 
     /* Command to reboot the system */

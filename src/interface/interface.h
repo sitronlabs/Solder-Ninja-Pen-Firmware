@@ -6,12 +6,9 @@
 
 /* Config */
 #include "../../cfg/config.h"
-#ifndef CONFIG_UI_DISPLAY_WIDTH
-#define CONFIG_UI_DISPLAY_WIDTH 96  //!< Horizontal size of the display (in pixels).
-#endif
-#ifndef CONFIG_UI_DISPLAY_HEIGHT
-#define CONFIG_UI_DISPLAY_HEIGHT 16  //!< Vertical size of the display (in pixels).
-#endif
+#define CONFIG_UI_DISPLAY_WIDTH 96                                                                    //!< Horizontal size of the display (in pixels).
+#define CONFIG_UI_DISPLAY_HEIGHT 16                                                                   //!< Vertical size of the display (in pixels).
+#define CONFIG_UI_DISPLAY_FRAMEBUFFER_BYTES (CONFIG_UI_DISPLAY_WIDTH * CONFIG_UI_DISPLAY_HEIGHT / 8)  //!< Size of the display framebuffer (in bytes).
 #ifndef CONFIG_UI_SPLASH_DURATION
 #define CONFIG_UI_SPLASH_DURATION 1500  //!< Duration of the splash screen (in milliseconds).
 #endif
@@ -61,5 +58,18 @@ int interface_setup(void);
  * @return 0 on success, negative error code on failure
  */
 int interface_task(void);
+
+/**
+ * @brief Read-only pointer to the live SSD1306 framebuffer
+ *
+ * On success, @p framebuffer points at @ref CONFIG_UI_DISPLAY_FRAMEBUFFER_BYTES bytes
+ * (driver page layout). That pointer stays valid for the program lifetime; the bytes are
+ * overwritten whenever the UI redraws (@ref interface_task) — copy first if you need a
+ * stable snapshot across further UI updates.
+ *
+ * @param[out] framebuffer Receives the framebuffer address (caller must pass an lvalue)
+ * @return 0 on success (reserved for future error conditions)
+ */
+int interface_display_capture(const uint8_t *&framebuffer);
 
 #endif
