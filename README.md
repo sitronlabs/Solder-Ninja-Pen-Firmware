@@ -47,7 +47,7 @@ This project uses PlatformIO for building and development.
 
 2. Open the `Solder-Ninja-Pen-Firmware` folder in Visual Studio Code. PlatformIO will automatically detect the project and install dependencies. 
 
-3. Use the PlatformIO toolbar to build, and upload to the device. The device should be automatically reset into bootloader mode by PlatformIO, if not unplug your device, and plug it again while holding the left button.
+3. Use the PlatformIO toolbar to build, and upload to the device. The device should be automatically reset into bootloader mode by PlatformIO, if not: unplug your device, and plug it again while holding the left button.
 
 ## Communication API
 
