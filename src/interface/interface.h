@@ -51,6 +51,15 @@ struct interface_icon {
 int interface_setup(void);
 
 /**
+ * @brief Queues the tip resistance result for display after the startup splash.
+ *
+ * @param[in] resistance_ohms Resistance value to display in ohms
+ * @param[in] use_default True when the measurement was skipped or invalid
+ * @return 0 on success
+ */
+int interface_tip_resistance_result_show(const float resistance_ohms, const bool use_default);
+
+/**
  * @brief Main interface task handler
  *
  * This function implements the main user interface state machine that handles
