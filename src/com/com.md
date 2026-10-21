@@ -2,18 +2,26 @@
 
 ## Protocol Overview
 
-All commands are sent as JSON objects over serial (115200 baud) with the following format:
-- Request: `{"action": "<function_name>", ...arguments}`
-- Response: `{"result": "success"|"failure", ...output_parameters, "errors": [...]}`
+All commands are sent as JSON objects over serial (115200 baud, 8N1) with the following format:
+- Request: `{"action": "<function_name>", ...arguments}\r\n`
+- Response: `{"result": "success"|"failure", ...output_parameters, "errors": [...]}\r\n`
 
 The API is designed to feel like calling C functions. Function names match the underlying C function names where possible.
+
+**Serial Port Configuration:**
+- Baud rate: 115200
+- Data bits: 8, Parity: None, Stop bits: 1 (8N1)
+- Flow control: None, but **DTR and RTS must both be set high** for the device to communicate
+
+**Request Format:**
+- All requests must be terminated with `\r\n` (carriage return + line feed)
+- The device will not process a command until the line terminator is received
 
 **Response Format:**
 - `result`: Either `"success"` or `"failure"`
 - Output parameters are returned directly (mimicking C function output parameters)
 - `errors`: Array of error messages (only present on error)
-
-All responses end with `\r\n`.
+- All responses are terminated with `\r\n`
 
 ---
 

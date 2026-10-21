@@ -79,7 +79,7 @@ void setup(void) {
     log_i("Firmware version: %s", k_version_string);
     char serial_number[CONFIG_SETTINGS_SERIAL_NUMBER_MAX_LENGTH + 1] = {0};
     res = settings_product_get(NULL, NULL, serial_number);
-    if (res < 0) {
+    if (res <= 0) {
         log_i("Serial number: Not available");
     } else {
         log_i("Serial number: %s", serial_number);
