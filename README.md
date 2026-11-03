@@ -4,6 +4,8 @@
 ![License](https://img.shields.io/github/license/sitronlabs/Solder-Ninja-Pen-Firmware.svg)
 ![Latest Release](https://img.shields.io/github/release/sitronlabs/Solder-Ninja-Pen-Firmware.svg)
 ![Latest Build](https://github.com/sitronlabs/Solder-Ninja-Pen-Firmware/actions/workflows/build.yaml/badge.svg)
+[![Available to buy on Crowd Supply](https://img.shields.io/badge/Buy_on-Crowd_Supply-099.svg)](https://www.crowdsupply.com/sitron-labs/solder-ninja-pen)
+[![Available to buy on Mouser Electronics](https://img.shields.io/badge/Buy_on-Mouser-0070bb.svg)](https://www.mouser.com/ProductDetail/392-SLTO00001R8B)
 
 # Solder Ninja Pen Firmware
 
@@ -45,7 +47,7 @@ This project uses PlatformIO for building and development.
 
 2. Open the `Solder-Ninja-Pen-Firmware` folder in Visual Studio Code. PlatformIO will automatically detect the project and install dependencies. 
 
-3. Use the PlatformIO toolbar to build, and upload to the device. The device should be automatically reset into bootloader mode by PlatformIO, if not unplug your device, and plug it again while holding the left button.
+3. Use the PlatformIO toolbar to build, and upload to the device. The device should be automatically reset into bootloader mode by PlatformIO, if not: unplug your device, and plug it again while holding the left button.
 
 ## Communication API
 
@@ -75,5 +77,6 @@ You are also welcome to request a feature by [opening an issue](https://github.c
 ## Resources
 
 - [Product page](https://www.solder.ninja/pen)
-- [Crowd Supply campaign page](https://www.crowdsupply.com/sitron-labs/solder-ninja-pen)
+- [Buy on Crowd Supply](https://www.crowdsupply.com/sitron-labs/solder-ninja-pen)
+- [Buy on Mouser](https://www.mouser.com/ProductDetail/392-SLTO00001R8B)
 - [Discord community](https://discord.gg/btnVDeWhfW)

@@ -77,7 +77,7 @@ git_branch = detect_branch()
 git_describe = safe_git_command("git describe --always --tags --long --dirty")
 
 # Parse git describe output
-match = re.match('^(v([0-9]*?)\.([0-9]*?)\.([0-9]*?)-([0-9]*?)-g)?([0-9A-Fa-f]{5,40})(-dirty)?$', git_describe)
+match = re.match(r'^(v([0-9]*?)\.([0-9]*?)\.([0-9]*?)-([0-9]*?)-g)?([0-9A-Fa-f]{5,40})(-dirty)?$', git_describe)
 if match:
     version_major = match.group(2) or "0"
     version_minor = match.group(3) or "0"
