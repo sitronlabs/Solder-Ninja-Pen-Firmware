@@ -37,6 +37,95 @@
 int power_setup(void);
 
 /**
+ * @brief Reads current drawn by the DC-DC converter from the USB input path.
+ *
+ * The INA219 measures the converter input branch, not the current through the tip.
+ *
+ * @param[out] current_a Current in amperes
+ * @return 0 on success, negative error code on failure
+ */
+int power_current_get(float &current_a);
+
+/**
+ * @brief Gets the tip resistance currently used for buck regulation.
+ *
+ * Returns the selected nominal resistance, or the configured default when a
+ * valid measurement is unavailable.
+ *
+ * @param[out] resistance_ohms Current tip resistance in ohms
+ * @return 0 on success
+ */
+int power_tip_resistance_get(float &resistance_ohms);
+
+/**
+ * @brief Applies the configured tip resistance offset to regulation.
+ * @return 0 on success, negative error code if buck regulation fails
+ */
+int power_tip_resistance_offset_apply(void);
+
+/**
+ * @brief Applies a changed heating current limit to the buck converter.
+ * @return 0 on success, negative error code if buck regulation fails
+ */
+int power_heating_current_limit_configure(void);
+
+/**
+ * @brief Advances the non-blocking tip resistance measurement.
+ *
+ * Call periodically while the measurement is active. The probe is skipped when
+ * USB-PD power is unavailable or its safety budget is insufficient.
+ *
+ * @return 0 while waiting or collecting samples, 1 when a valid measurement
+ *         completes, 2 when the measurement is skipped or falls back to the
+ *         default resistance, negative error code on failure
+ */
+int power_tip_resistance_measure_task(void);
+
+/**
+ * @brief Cancels an active tip resistance measurement.
+ *
+ * Disables the probe output and restores buck regulation using the available
+ * power and currently selected tip resistance.
+ *
+ * @return 0 on success, negative error code if buck regulation cannot be restored
+ */
+int power_tip_resistance_measure_cancel(void);
+
+/**
+ * @brief Reduces buck output in response to measured USB input overcurrent.
+ *
+ * Uses the measured current ratio and inverse DAC transfer function to lower
+ * the buck output in bounded steps. Returns an error if the output is already
+ * at its minimum and measured current still exceeds the limit.
+ *
+ * @param[in] current_a Measured current in amperes
+ * @param[in] current_limit_a Maximum allowed current in amperes
+ * @return 0 if no correction is needed or the correction succeeds; negative on failure
+ */
+int power_heating_current_limit_apply(const float current_a, const float current_limit_a);
+
+/**
+ * @brief Sets the buck output corresponding to a requested USB input-current limit.
+ *
+ * Converts the requested current to a buck voltage and applies the closest
+ * supported DAC code. This is used to create the soft-start current ramp.
+ *
+ * @param[in] current_limit_a Requested USB input-current limit in amperes
+ * @param[out] applied_current_limit_a Modeled limit after DAC quantization and range limits
+ * @param[out] minimum_voltage_reached True when DAC code 255 is selected
+ * @return 0 on success, negative error code otherwise
+ */
+int power_heating_current_limit_ramp_apply(const float current_limit_a, float &applied_current_limit_a, bool &minimum_voltage_reached);
+
+/**
+ * @brief Reads the bus voltage feeding the DC-DC converter.
+ *
+ * @param[out] voltage_v Voltage in volts
+ * @return 0 on success, negative error code on failure
+ */
+int power_voltage_get(float &voltage_v);
+
+/**
  * @brief Power source provider enumeration
  *
  * Defines the different USB power negotiation protocols and sources
@@ -107,6 +196,14 @@ int power_contract_get(struct power_option &contract);
  * @return 0 on success, negative error code on failure
  */
 int power_negotiated_power_limit_get(float &power_limit);
+
+/**
+ * @brief Get the negotiated current limit in amperes with the configured safety factor applied.
+ *
+ * @param[out] current_limit_a Current limit in amperes
+ * @return 0 on success, negative error code on failure
+ */
+int power_negotiated_current_limit_get(float &current_limit_a);
 
 /** @} */
 

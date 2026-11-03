@@ -27,6 +27,7 @@
 static ssd1306 m_library(CONFIG_UI_DISPLAY_WIDTH, CONFIG_UI_DISPLAY_HEIGHT);
 static uint8_t m_buffer[CONFIG_UI_DISPLAY_WIDTH * CONFIG_UI_DISPLAY_HEIGHT / 8];
 static uint32_t m_timestamp;
+static uint32_t m_tip_resistance_result_timestamp;
 static enum {
     STATE_SPLASH_0,
     STATE_SPLASH_1,
@@ -41,6 +42,7 @@ static enum {
     STATE_MONITOR_HEATING,
     STATE_MONITOR_ASLEEP,
     STATE_MONITOR_ADJUST,
+    STATE_TIP_RESISTANCE_RESULT,
     STATE_MENU_HOME,
     STATE_MENU_INTERFACE_UNITS_0,
     STATE_MENU_INTERFACE_UNITS_1,
@@ -50,8 +52,65 @@ static enum {
     STATE_MENU_DISPLAY_BRIGHTNESS_1,
     STATE_MENU_ACCELEROMETER_IDLE_TIME_0,
     STATE_MENU_ACCELEROMETER_IDLE_TIME_1,
+    STATE_MENU_TIP_CURRENT_LIMIT_0,
+    STATE_MENU_TIP_CURRENT_LIMIT_1,
+    STATE_MENU_TIP_SOFT_START_0,
+    STATE_MENU_TIP_SOFT_START_1,
+    STATE_MENU_TIP_RESISTANCE_0,
+    STATE_MENU_TIP_RESISTANCE_1,
     STATE_MENU_UPDATE_0,
 } m_sm;
+static float m_heating_current_display_samples[CONFIG_UI_HEATING_CURRENT_AVERAGE_SAMPLE_COUNT];
+static float m_heating_current_display_sum_a;
+static uint8_t m_heating_current_display_sample_index;
+static uint8_t m_heating_current_display_sample_count;
+static uint32_t m_heating_current_display_sample_timestamp;
+static float m_tip_resistance_result_ohms;
+static bool m_tip_resistance_result_default;
+static bool m_tip_resistance_result_pending;
+
+/**
+ * @brief Clears the rolling average used for the heating-screen current display.
+ *
+ * The next valid current sample initializes the display average again.
+ */
+static void m_heating_current_display_average_reset(void) {
+    m_heating_current_display_sum_a = 0.0f;
+    m_heating_current_display_sample_index = 0;
+    m_heating_current_display_sample_count = 0;
+    m_heating_current_display_sample_timestamp = 0;
+}
+
+/**
+ * @brief Updates and returns the rolling average used only for the heating-screen display.
+ *
+ * Samples are added at the configured interval to the configured rolling window. The returned
+ * current is in amperes; this average is not used by the heating control loop.
+ *
+ * @param[in] current_a Latest INA219 current sample in amperes
+ * @return Averaged display current in amperes
+ */
+static float m_heating_current_display_average_get(const float current_a) {
+    const uint8_t sample_count = sizeof(m_heating_current_display_samples) / sizeof(m_heating_current_display_samples[0]);
+    const uint32_t timestamp = millis();
+
+    if (m_heating_current_display_sample_count == 0) {
+        for (uint8_t i = 0; i < sample_count; i++) {
+            m_heating_current_display_samples[i] = current_a;
+        }
+        m_heating_current_display_sum_a = current_a * sample_count;
+        m_heating_current_display_sample_count = sample_count;
+        m_heating_current_display_sample_timestamp = timestamp;
+    } else if ((timestamp - m_heating_current_display_sample_timestamp) >= CONFIG_UI_HEATING_CURRENT_AVERAGE_SAMPLE_PERIOD_MS) {
+        m_heating_current_display_sum_a -= m_heating_current_display_samples[m_heating_current_display_sample_index];
+        m_heating_current_display_samples[m_heating_current_display_sample_index] = current_a;
+        m_heating_current_display_sum_a += current_a;
+        m_heating_current_display_sample_index = (m_heating_current_display_sample_index + 1) % sample_count;
+        m_heating_current_display_sample_timestamp = timestamp;
+    }
+
+    return m_heating_current_display_sum_a / sample_count;
+}
 
 /**
  * @brief Initialize the user interface system
@@ -115,8 +174,20 @@ int interface_setup(void) {
         log_e("Failed to detect display panel!");
         return -ERROR_PERIPHERAL_NOT_DETECTED;
     }
+    m_library.cp437(true);
 
     /* Return success */
+    return 0;
+}
+
+int interface_tip_resistance_result_show(const float resistance_ohms, const bool use_default) {
+    if (m_sm == STATE_TIP_RESISTANCE_RESULT) {
+        return 0;
+    }
+
+    m_tip_resistance_result_ohms = resistance_ohms;
+    m_tip_resistance_result_default = use_default;
+    m_tip_resistance_result_pending = true;
     return 0;
 }
 
@@ -188,6 +259,17 @@ int interface_task(void) {
     }
 
     /* Handle user interface */
+    if ((m_tip_resistance_result_pending == true) &&
+        ((m_sm == STATE_MONITOR_REDIRECT) ||
+         (m_sm == STATE_MONITOR_LOCKED) ||
+         (m_sm == STATE_MONITOR_HEATING) ||
+         (m_sm == STATE_MONITOR_ASLEEP) ||
+         (m_sm == STATE_MONITOR_ADJUST))) {
+        m_tip_resistance_result_pending = false;
+        m_tip_resistance_result_timestamp = millis();
+        m_sm = STATE_TIP_RESISTANCE_RESULT;
+    }
+
     switch (m_sm) {
 
         case STATE_SPLASH_0: {
@@ -334,11 +416,19 @@ int interface_task(void) {
             }
 
             /* Move on */
-            m_sm = STATE_MONITOR_REDIRECT;
+            if (m_tip_resistance_result_pending == true) {
+                m_tip_resistance_result_pending = false;
+                m_tip_resistance_result_timestamp = millis();
+                m_sm = STATE_TIP_RESISTANCE_RESULT;
+            } else {
+                m_sm = STATE_MONITOR_REDIRECT;
+            }
             break;
         }
 
         case STATE_MONITOR_REDIRECT: {
+
+            m_heating_current_display_average_reset();
 
             /* Move on according to controller state */
             switch (controller_state_get()) {
@@ -358,6 +448,34 @@ int interface_task(void) {
                     m_sm = STATE_SPLASH_0;
                     return -ERROR_GENERIC_STATE_UNEXPECTED;
                 }
+            }
+            break;
+        }
+
+        case STATE_TIP_RESISTANCE_RESULT: {
+
+            /* Display the tip resistance and whether the default was used. */
+            m_library.clear();
+            m_library.setTextSize(1);
+            m_library.setCursor(0, 0);
+            m_library.print("Tip resist.");
+            m_library.setCursor(0, 9);
+            m_library.printf("%.1f", m_tip_resistance_result_ohms);
+            m_library.write(0xEA);
+            float result_offset_ohms = CONFIG_TIP_RESISTANCE_OFFSET_INVALID_OHMS;
+            const bool result_offset_configured = settings_heating_tip_resistance_offset_get(result_offset_ohms) == 1;
+            if ((m_tip_resistance_result_default != false) || (result_offset_configured != true)) {
+                m_library.printf(" (def)");
+            } else {
+                m_library.printf(" (%+.1f", result_offset_ohms);
+                m_library.write(0xEA);
+                m_library.write(')');
+            }
+            
+            m_library.display();
+
+            if ((millis() - m_tip_resistance_result_timestamp) >= 2000) {
+                m_sm = STATE_MONITOR_REDIRECT;
             }
             break;
         }
@@ -492,8 +610,17 @@ int interface_task(void) {
             } else {
                 m_library.setCursor(11 * 6, 0);
                 m_library.printf("%4.1fV", contract.voltage_max);
+
+                /* Show the actual measured current rather than the negotiated limit while heating, falling back to it on error */
+                float current_a = 0.0f;
+                res = power_current_get(current_a);
                 m_library.setCursor(12 * 6, 9);
-                m_library.printf("%3.1fA", contract.current_max);
+                if (res < 0) {
+                    m_heating_current_display_average_reset();
+                    m_library.printf("%3.1fA", contract.current_max);
+                } else {
+                    m_library.printf("%3.1fA", m_heating_current_display_average_get(current_a));
+                }
             }
             m_library.display();
 
@@ -944,7 +1071,7 @@ int interface_task(void) {
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {
-                    m_sm = STATE_MENU_UPDATE_0;
+                    m_sm = STATE_MENU_TIP_CURRENT_LIMIT_0;
                     break;
                 }
                 case BUTTONS_EVENT_BOTH_SHORT: {
@@ -1032,6 +1159,277 @@ int interface_task(void) {
             break;
         }
 
+        case STATE_MENU_TIP_CURRENT_LIMIT_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Current lim.");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_TIME_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_TIP_SOFT_START_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_TIP_CURRENT_LIMIT_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+            break;
+        }
+
+        case STATE_MENU_TIP_CURRENT_LIMIT_1: {
+
+            float factor = CONFIG_TIP_CURRENT_LIMIT_FACTOR;
+            settings_heating_current_limit_factor_get(factor);
+            int factor_percent = (int)(factor * 100.0f + 0.5f);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Current limit");
+            m_library.setCursor(20, 9);
+            m_library.printf("%3d%%", factor_percent);
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    int factor_tenths = (int)(factor * 10.0f + 0.5f);
+                    if (factor_tenths > 1) {
+                        factor_tenths--;
+                        settings_heating_current_limit_factor_set(factor_tenths / 10.0f);
+                    }
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    int factor_tenths = (int)(factor * 10.0f + 0.5f);
+                    if (factor_tenths < 10) {
+                        factor_tenths++;
+                        settings_heating_current_limit_factor_set(factor_tenths / 10.0f);
+                    }
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_TIP_CURRENT_LIMIT_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+            break;
+        }
+
+        case STATE_MENU_TIP_SOFT_START_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Soft start");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_TIP_CURRENT_LIMIT_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_TIP_RESISTANCE_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_TIP_SOFT_START_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+            break;
+        }
+
+        case STATE_MENU_TIP_SOFT_START_1: {
+
+            uint32_t duration_ms = CONFIG_TIP_SOFT_START_DURATION;
+            settings_heating_soft_start_duration_get(duration_ms);
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Soft start");
+            m_library.setCursor(20, 9);
+            m_library.printf("%lu ms", (unsigned long)duration_ms);
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    if (duration_ms > 100) {
+                        settings_heating_soft_start_duration_set(duration_ms - 100);
+                    }
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    if (duration_ms <= 900) {
+                        settings_heating_soft_start_duration_set(duration_ms + 100);
+                    }
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_TIP_SOFT_START_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+            break;
+        }
+
+        case STATE_MENU_TIP_RESISTANCE_0: {
+
+            /* Display menu page */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Settings");
+            m_library.setCursor(20, 9);
+            m_library.print("Tip resist.");
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    m_sm = STATE_MENU_TIP_SOFT_START_0;
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    m_sm = STATE_MENU_UPDATE_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_TIP_RESISTANCE_1;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+            break;
+        }
+
+        case STATE_MENU_TIP_RESISTANCE_1: {
+
+            float resistance_ohms = 0.0f;
+            power_tip_resistance_get(resistance_ohms);
+            float offset_ohms = CONFIG_TIP_RESISTANCE_OFFSET_INVALID_OHMS;
+            bool offset_configured = settings_heating_tip_resistance_offset_get(offset_ohms) == 1;
+            int offset_tenths = offset_configured ? (int)(offset_ohms * 10.0f + ((offset_ohms < 0.0f) ? -0.5f : 0.5f)) : 0;
+
+            /* Display the currently used tip resistance */
+            m_library.clear();
+            m_library.drawBitmap(0, 0, k_icon_settings.data, k_icon_settings.width, k_icon_settings.height, 1);
+            m_library.setTextSize(1);
+            m_library.setCursor(20, 0);
+            m_library.print("Tip resist.");
+            m_library.setCursor(20, 9);
+            m_library.printf("%.1f", resistance_ohms);
+            m_library.write(0xEA);
+            if (offset_configured != true) {
+                m_library.printf(" (def)");
+            } else {
+                m_library.printf(" (%+.1f", offset_ohms);
+                m_library.write(0xEA);
+                m_library.write(')');
+            }
+            m_library.display();
+
+            /* Handle buttons */
+            switch (buttons_event_get()) {
+                case BUTTONS_EVENT_LEFT_SHORT: {
+                    if (offset_configured != true) {
+                        offset_tenths = 0;
+                    }
+                    if (offset_tenths > CONFIG_TIP_RESISTANCE_OFFSET_MIN_TENTHS) {
+                        offset_tenths--;
+                        if (settings_heating_tip_resistance_offset_set(offset_tenths / 10.0f) == 0) {
+                            power_tip_resistance_offset_apply();
+                        }
+                    }
+                    break;
+                }
+                case BUTTONS_EVENT_RIGHT_SHORT: {
+                    if (offset_configured != true) {
+                        offset_tenths = 0;
+                    }
+                    if (offset_tenths < CONFIG_TIP_RESISTANCE_OFFSET_MAX_TENTHS) {
+                        offset_tenths++;
+                        if (settings_heating_tip_resistance_offset_set(offset_tenths / 10.0f) == 0) {
+                            power_tip_resistance_offset_apply();
+                        }
+                    }
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_SHORT: {
+                    m_sm = STATE_MENU_TIP_RESISTANCE_0;
+                    break;
+                }
+                case BUTTONS_EVENT_BOTH_LONG: {
+                    m_sm = STATE_MONITOR_REDIRECT;
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+            break;
+        }
+
         case STATE_MENU_UPDATE_0: {
 
             /* Display menu page */
@@ -1047,7 +1445,7 @@ int interface_task(void) {
             /* Handle buttons */
             switch (buttons_event_get()) {
                 case BUTTONS_EVENT_LEFT_SHORT: {
-                    m_sm = STATE_MENU_ACCELEROMETER_IDLE_TIME_0;
+                    m_sm = STATE_MENU_TIP_RESISTANCE_0;
                     break;
                 }
                 case BUTTONS_EVENT_RIGHT_SHORT: {

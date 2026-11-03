@@ -1459,6 +1459,124 @@ int settings_accelerometer_idle_time_set(const uint32_t time_ms) {
 }
 
 /**
+ * @brief Get the heating current limit factor
+ * @param[out] factor Factor from 0.1 to 1.0
+ * @return 1 if found, 0 if not found or invalid
+ */
+int settings_heating_current_limit_factor_get(float &factor) {
+    if (m_doc["preferences"]["heating"]["current_limit_factor_tenths"].is<int>() != true) {
+        return 0;
+    }
+
+    int factor_tenths = m_doc["preferences"]["heating"]["current_limit_factor_tenths"];
+    if ((factor_tenths < 1) || (factor_tenths > 10)) {
+        return 0;
+    }
+
+    factor = factor_tenths / 10.0f;
+    return 1;
+}
+
+/**
+ * @brief Set the heating current limit factor
+ * @param[in] factor Factor from 0.1 to 1.0 in 0.1 increments
+ * @return 0 on success, negative error code on failure
+ */
+int settings_heating_current_limit_factor_set(const float factor) {
+    if ((factor < 0.1f) || (factor > 1.0f)) {
+        return -EINVAL;
+    }
+
+    int factor_tenths = (int)(factor * 10.0f + 0.5f);
+    float factor_tenths_error = factor * 10.0f - factor_tenths;
+    if ((factor_tenths < 1) || (factor_tenths > 10) || (factor_tenths_error < -0.001f) || (factor_tenths_error > 0.001f)) {
+        return -EINVAL;
+    }
+
+    m_doc["preferences"]["heating"]["current_limit_factor_tenths"] = factor_tenths;
+    m_modified = true;
+    m_modified_timestamp = millis();
+    return 0;
+}
+
+/**
+ * @brief Get the heating soft-start duration
+ * @param[out] duration_ms Duration in milliseconds from 100 to 1000
+ * @return 1 if found, 0 if not found or invalid
+ */
+int settings_heating_soft_start_duration_get(uint32_t &duration_ms) {
+    if (m_doc["preferences"]["heating"]["soft_start_duration_ms"].is<uint32_t>() != true) {
+        return 0;
+    }
+
+    uint32_t stored_duration_ms = m_doc["preferences"]["heating"]["soft_start_duration_ms"];
+    if ((stored_duration_ms < 100) || (stored_duration_ms > 1000) || ((stored_duration_ms % 100) != 0)) {
+        return 0;
+    }
+
+    duration_ms = stored_duration_ms;
+    return 1;
+}
+
+/**
+ * @brief Set the heating soft-start duration
+ * @param[in] duration_ms Duration in milliseconds from 100 to 1000 in 100 ms increments
+ * @return 0 on success, negative error code on failure
+ */
+int settings_heating_soft_start_duration_set(const uint32_t duration_ms) {
+    if ((duration_ms < 100) || (duration_ms > 1000) || ((duration_ms % 100) != 0)) {
+        return -EINVAL;
+    }
+
+    m_doc["preferences"]["heating"]["soft_start_duration_ms"] = duration_ms;
+    m_modified = true;
+    m_modified_timestamp = millis();
+    return 0;
+}
+
+/**
+ * @brief Get the tip resistance measurement offset
+ * @param[out] offset_ohms Offset from -1.0 to 1.0 ohms in 0.1-ohm increments
+ * @return 1 if found, 0 if not found or invalid
+ */
+int settings_heating_tip_resistance_offset_get(float &offset_ohms) {
+    offset_ohms = CONFIG_TIP_RESISTANCE_OFFSET_INVALID_OHMS;
+
+    if (m_doc["preferences"]["heating"]["tip_resistance_offset_tenths"].is<int>() != true) {
+        return 0;
+    }
+
+    const int offset_tenths = m_doc["preferences"]["heating"]["tip_resistance_offset_tenths"];
+    if ((offset_tenths < CONFIG_TIP_RESISTANCE_OFFSET_MIN_TENTHS) ||
+        (offset_tenths > CONFIG_TIP_RESISTANCE_OFFSET_MAX_TENTHS)) {
+        return 0;
+    }
+
+    offset_ohms = offset_tenths / 10.0f;
+    return 1;
+}
+
+/**
+ * @brief Set the tip resistance measurement offset
+ * @param[in] offset_ohms Offset from -1.0 to 1.0 ohms in 0.1-ohm increments
+ * @return 0 on success, negative error code on failure
+ */
+int settings_heating_tip_resistance_offset_set(const float offset_ohms) {
+    const int offset_tenths = (int)(offset_ohms * 10.0f + ((offset_ohms < 0.0f) ? -0.5f : 0.5f));
+    const float offset_tenths_error = (offset_ohms * 10.0f) - offset_tenths;
+    if ((offset_tenths < CONFIG_TIP_RESISTANCE_OFFSET_MIN_TENTHS) ||
+        (offset_tenths > CONFIG_TIP_RESISTANCE_OFFSET_MAX_TENTHS) ||
+        (offset_tenths_error < -0.001f) || (offset_tenths_error > 0.001f)) {
+        return -EINVAL;
+    }
+
+    m_doc["preferences"]["heating"]["tip_resistance_offset_tenths"] = offset_tenths;
+    m_modified = true;
+    m_modified_timestamp = millis();
+    return 0;
+}
+
+/**
  * @brief Get the maximum USB voltage in volts
  * @param[out] voltage Maximum USB voltage in volts
  * @return 1 if found, 0 if not found
